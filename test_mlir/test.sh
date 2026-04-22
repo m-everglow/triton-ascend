@@ -1,0 +1,5 @@
+/mnt/c/Code/new_controlflow/triton-ascend_ifcond/python/build/cmake.linux-x86_64-cpython-3.12/third_party/ascend/tools/triton-adapter-opt/triton-adapter-opt /mnt/c/Code/mlir/test.mlir -allow-unregistered-dialect --add-if-controls -o /mnt/c/Code/mlir/after_addifcondition.mlir > /mnt/c/Code/mlir/compile_out.mlir 2>&1
+
+/mnt/c/Code/new_controlflow/triton-ascend_ifcond/python/build/cmake.linux-x86_64-cpython-3.12/third_party/ascend/tools/triton-adapter-opt/triton-adapter-opt /mnt/c/Code/mlir/after_updateif.mlir -allow-unregistered-dialect --add-if-controls -o /mnt/c/Code/mlir/after_addifcondition.mlir > /mnt/c/Code/mlir/compile_out.mlir 2>&1
+
+/mnt/c/Code/new_controlflow/triton-ascend_ifcond/python/build/cmake.linux-x86_64-cpython-3.12/third_party/ascend/tools/triton-adapter-opt/triton-adapter-opt /mnt/c/Code/new_controlflow/triton-ascend_ifcond/test/ssbuf/fa_fwd/fa_fwd_v3.mlir -allow-unregistered-dialect --inner-multibuffer --add-if-controls -o /mnt/c/Code/new_controlflow/triton-ascend_ifcond/test/ssbuf/fa_fwd/fa_fwd_v3_output.mlir

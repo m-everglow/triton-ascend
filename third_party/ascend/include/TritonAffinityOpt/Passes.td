@@ -26,4 +26,36 @@ def DAGSync : Pass<"dag-sync", "mlir::ModuleOp"> {
   let dependentDialects = ["hivm::HIVMDialect", "bufferization::BufferizationDialect", "annotation::AnnotationDialect"];
 }
 
+def AddIfControls : Pass<"add-if-controls", "mlir::ModuleOp"> {
+  let summary = "add if controls for ssbuffer";
+  let constructor = "triton::createAddIfControlsPass()";
+  let dependentDialects = ["hivm::HIVMDialect", "bufferization::BufferizationDialect", "scope::ScopeDialect", "annotation::AnnotationDialect"];
+}
+
+def LifecycleAnalysis : Pass<"lifecycle-analysis", "mlir::ModuleOp"> {
+  let summary = "Analyze operation lifecycles";
+  let constructor = "triton::createLifecycleAnalysisPass()";
+  let dependentDialects = ["hivm::HIVMDialect", "bufferization::BufferizationDialect", "scope::ScopeDialect", "annotation::AnnotationDialect"];
+}
+
+def MultiBuffer : Pass<"inner-multibuffer", "mlir::ModuleOp"> {
+  let summary = "Intra-scope multi-buffer allocation for SSBUF";
+  let constructor = "triton::createMultiBufferPass()";
+  let dependentDialects = [
+    "hivm::HIVMDialect",
+    "bufferization::BufferizationDialect",
+    "scope::ScopeDialect",
+    "LLVM::LLVMDialect"
+  ];
+}
+def OuterMultiBuffer : Pass<"outer-multibuffer", "mlir::ModuleOp"> {
+  let summary = "Inter-scope (CV) multi-buffer allocation for SSBUF";
+  let constructor = "triton::createOuterMultiBufferPass()";
+  let dependentDialects = [
+    "hivm::HIVMDialect",
+    "scope::ScopeDialect",
+    "LLVM::LLVMDialect"
+  ];
+}
+
 #endif // TRITON_AFFINITY_OPTIMIZATION_PASSES

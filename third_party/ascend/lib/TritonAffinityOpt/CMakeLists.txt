@@ -3,6 +3,11 @@ add_triton_library(TritonAffinityOpt
   DAG.cpp
   DAGSync.cpp
   DAGScope.cpp
+  AddIfControls.cpp
+  LifecycleAnalysis.cpp
+  InnerMultibuffer.cpp
+  OuterMultiBuffer.cpp
+  TritonSyncScope/Common/FlagIdManager.cpp
 
   DEPENDS
   TritonAffinityOptConversionPassIncGen

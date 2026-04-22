@@ -118,11 +118,14 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             auto_blockify_size
         )
         if (metadata["add_auto_scheduling"]):
-            ascend.passes.ttir.add_dag_sync(pm)
-            ascend.passes.ttir.add_dag_scope(pm)
-            passes.common.add_cse(pm)
-            passes.common.add_canonicalizer(pm)
-            ascend.passes.ttir.add_dag_ssbuffer(pm)
+            # ascend.passes.ttir.add_dag_sync(pm)
+            # ascend.passes.ttir.add_dag_scope(pm)
+            # passes.common.add_cse(pm)
+            # passes.common.add_canonicalizer(pm)
+            # ascend.passes.ttir.add_dag_ssbuffer(pm)
+            # passes.common.add_cse(pm)
+            # passes.common.add_canonicalizer(pm)
+            ascend.passes.ttir.add_add_if_controls(pm)
             passes.common.add_cse(pm)
             passes.common.add_canonicalizer(pm)
 

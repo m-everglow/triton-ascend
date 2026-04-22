@@ -24,6 +24,13 @@
 #define TRITON_ADAPTER_TRITON_AFFINITY_OPTIMIZATION_PASSES_H
 
 #include "mlir/Pass/Pass.h"
+#include "bishengir/Dialect/HIVM/IR/HIVM.h"
+#include "bishengir/Dialect/Scope/IR/Scope.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
 // Forward declarations.
@@ -34,9 +41,23 @@ namespace triton {
 /// Creates a pass to convert Triton dialect to Annotation dialect.
 std::unique_ptr<OperationPass<ModuleOp>> createDAGSSBufferPass();
 
+/// Creates a pass for §6.1: Compute Block Partition (C/V type + block ID + VFFusion).
+std::unique_ptr<OperationPass<ModuleOp>> createComputeBlockPartitionPass();
+
+/// Creates a pass for §6.5: AddControlFlow (scf.if per block_id + block counters + flag conditions).
+std::unique_ptr<OperationPass<ModuleOp>> createAddControlFlowPass();
+
 std::unique_ptr<OperationPass<ModuleOp>> createDAGSyncPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createDAGScopePass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createAddIfControlsPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createLifecycleAnalysisPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createMultiBufferPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createOuterMultiBufferPass();
 
 #define GEN_PASS_REGISTRATION
 #include "ascend/include/TritonAffinityOpt/Passes.h.inc"

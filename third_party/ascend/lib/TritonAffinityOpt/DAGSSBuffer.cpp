@@ -99,7 +99,7 @@ void ControlSsbufV2(ModuleOp module) {
         mlir::Operation* parentOp = op->getParentOp();
         mlir::Operation* scopeOp = nullptr;
         mlir::Operation* forOp = nullptr;
-        
+
         // 向上遍历查找scope.scope操作
         while (parentOp) {
             if (dyn_cast<scope::ScopeOp>(parentOp)) {
@@ -126,7 +126,7 @@ void ControlSsbufV2(ModuleOp module) {
 
         // 如果该scope已经处理过，则跳过
         if (processedScopes2.count(forOp) > 0) return;
-        
+
         // 标记该scope为已处理
         processedScopes2.insert(forOp);
 
@@ -136,7 +136,7 @@ void ControlSsbufV2(ModuleOp module) {
     for (auto forOp : processedScopes2) {
         mlir::Operation* parentOp = forOp->getParentOp();
         mlir::Operation* scopeOp = nullptr;
-        
+
         // 向上遍历查找scope.scope操作
         while (parentOp) {
             if (dyn_cast<scope::ScopeOp>(parentOp)) {
@@ -147,7 +147,7 @@ void ControlSsbufV2(ModuleOp module) {
         }
         bool isAIC = false;
         // 1. 先检查操作是否有这个属性
-        
+
         if (scopeOp->hasAttr("hivm.tcore_type")) {
             auto attr = scopeOp->getAttr("hivm.tcore_type");
             if (attr == aiCAttr) {
@@ -176,7 +176,7 @@ void ControlSsbufV2(ModuleOp module) {
             // 找到循环体的terminator（应该是yield操作）
             auto *terminator = loopBody.getTerminator();
             builder.setInsertionPoint(terminator);
-            
+
             // add sync_block_set
             coreAttr = hivm::TCoreTypeAttr::get(module.getContext(), hivm::TCoreType::CUBE);
             setPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
@@ -187,7 +187,7 @@ void ControlSsbufV2(ModuleOp module) {
             if (firstWait) {
                 auto &scopeBlock = scopeOp->getRegion(0).front();
                 auto *scope_terminator = scopeBlock.getTerminator();
-                builder.setInsertionPoint(scope_terminator);            
+                builder.setInsertionPoint(scope_terminator);
                 // add sync_block_wait
                 coreAttr = hivm::TCoreTypeAttr::get(module.getContext(), hivm::TCoreType::CUBE);
                 setPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
@@ -203,7 +203,7 @@ void ControlSsbufV2(ModuleOp module) {
             if (firstSet) {
                 auto &scopeBlock = scopeOp->getRegion(0).front();
                 builder.setInsertionPointToStart(&scopeBlock);
-                
+
                 // add sync_block_wait
                 auto coreAttr = hivm::TCoreTypeAttr::get(module.getContext(), hivm::TCoreType::VECTOR);
                 auto setPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
@@ -215,64 +215,64 @@ void ControlSsbufV2(ModuleOp module) {
 
             auto i64Type = builder.getIntegerType(64);
             auto i32Type = builder.getIntegerType(32);
-            
+
             // 创建需要的常量
             auto c32ConstAttr = mlir::IntegerAttr::get(i64Type, 32);
             auto c32ConstOp = builder.create<mlir::LLVM::ConstantOp>(
                 scopeOp->getLoc(), i64Type, c32ConstAttr);
-            
+
             auto c0i64ConstAttr = mlir::IntegerAttr::get(i64Type, 0);
             auto c0i64ConstOp = builder.create<mlir::LLVM::ConstantOp>(
                 scopeOp->getLoc(), i64Type, c0i64ConstAttr);
-            
+
             auto c0i32ConstAttr = mlir::IntegerAttr::get(i32Type, 0);
             auto c0i32ConstOp = builder.create<mlir::LLVM::ConstantOp>(
                 scopeOp->getLoc(), i32Type, c0i32ConstAttr);
-            
+
             auto c1i32ConstAttr = mlir::IntegerAttr::get(i32Type, 1);
             auto c1i32ConstOp = builder.create<mlir::LLVM::ConstantOp>(
                 scopeOp->getLoc(), i32Type, c1i32ConstAttr);
-            
+
             // %sub_id = hivm.hir.get_sub_block_idx -> i64
             // 这里假设有一个getSubBlockIdxOp操作
             auto subIdOp = builder.create<GetSubBlockIdxOp>(
                 scopeOp->getLoc(), i64Type);
-            
+
             // %ssb_addr_offset = arith.muli %sub_id, %c32_i64 : i64
             auto ssbAddrOffsetOp = builder.create<mlir::arith::MulIOp>(
                 scopeOp->getLoc(),
                 subIdOp.getResult(),
                 c32ConstOp.getResult());
-            
+
             // %ssb_addr = arith.addi %ssb_addr_offset, %c32_i64 : i64
             auto ssbAddrOp = builder.create<mlir::arith::AddIOp>(
                 scopeOp->getLoc(),
                 ssbAddrOffsetOp.getResult(),
                 c32ConstOp.getResult());
-            
+
             // %vec_id = arith.cmpi eq, %sub_id, %c0_i64 : i64
             auto vecIdOp = builder.create<mlir::arith::CmpIOp>(
                 scopeOp->getLoc(),
                 mlir::arith::CmpIPredicate::eq,
                 subIdOp.getResult(),
                 c0i64ConstOp.getResult());
-            
+
             // 2. 在parentop的开头插入代码
             builder.setInsertionPointToStart(&forOp->getRegion(0).front());
-            
+
             // add sync_block_wait
             auto coreAttr = hivm::TCoreTypeAttr::get(module.getContext(), hivm::TCoreType::VECTOR);
             auto setPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
             auto waitPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
             auto flagId = builder.getIntegerAttr(builder.getI64Type(), cubeControlIndex);
             builder.create<SyncBlockWaitOp>(forOp->getLoc(), coreAttr, setPipe, waitPipe, flagId);
-            
+
             // 在循环末尾（yield之前）插入代码
             auto &loopBody = forOp->getRegion(0).front();
             // 找到循环体的terminator（应该是yield操作）
             auto *terminator = loopBody.getTerminator();
             builder.setInsertionPoint(terminator);
-            
+
             // add sync_block_wait
             coreAttr = hivm::TCoreTypeAttr::get(module.getContext(), hivm::TCoreType::VECTOR);
             setPipe = PipeAttr::get(module.getContext(), hivm::PIPE::PIPE_S);
@@ -281,7 +281,7 @@ void ControlSsbufV2(ModuleOp module) {
             builder.create<SyncBlockSetOp>(forOp->getLoc(), coreAttr, setPipe, waitPipe, flagId);
         }
     }
-    
+
     auto i64Type = builder.getIntegerType(64);
     auto i32Type = builder.getIntegerType(32);
     auto initPtrType = mlir::LLVM::LLVMPointerType::get(builder.getContext(), 11);
@@ -310,7 +310,7 @@ void ControlSsbufV2(ModuleOp module) {
       auto c0i32ConstAttr = mlir::IntegerAttr::get(i32Type, 0);
       auto c0i32ConstOp = builder.create<mlir::LLVM::ConstantOp>(
           scopeOp->getLoc(), i32Type, c0i32ConstAttr);
-      
+
       auto c0initInttoptrOp = builder.create<mlir::LLVM::IntToPtrOp>(
           scopeOp->getLoc(), initPtrType, c0i64ConstOp.getResult());
       auto c32initInttoptrOp = builder.create<mlir::LLVM::IntToPtrOp>(
@@ -319,7 +319,7 @@ void ControlSsbufV2(ModuleOp module) {
           scopeOp->getLoc(), initPtrType, c64i64ConstOp.getResult());
       auto c96initInttoptrOp = builder.create<mlir::LLVM::IntToPtrOp>(
           scopeOp->getLoc(), initPtrType, c96i64ConstOp.getResult());
-      
+
       builder.create<LLVM::StoreOp>(
               scopeOp->getLoc(),
               c0i32ConstOp,
@@ -343,8 +343,96 @@ void ControlSsbufV2(ModuleOp module) {
     }
 }
 
-scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
-    
+// 处理当前 IfOp 与前一个 IfOp 的依赖关系
+SmallVector<Value> recursiveProcessIfOpWithDeps(scf::IfOp curIf, scf::IfOp prevIf,
+                                                DenseMap<scf::IfOp, SmallVector<Value>> &ifResultDeps)
+{
+  SmallVector<Value> deps;
+
+  auto prevIfResults = prevIf.getResults();
+  prevIf.walk([&](Operation* op) {
+    for (Value operand : op->getOperands()) {
+      if (llvm::is_contained(prevIfResults, operand)) {
+        deps.push_back(operand);
+      }
+    }
+  });
+
+  if (deps.empty())
+    return {};
+
+  // 去重
+  DenseSet<Value> depsSet(deps.begin(), deps.end());
+  SmallVector<Value> uniqueDeps(depsSet.begin(), depsSet.end());
+  ifResultDeps[curIf] = uniqueDeps;
+
+  return uniqueDeps;
+}
+
+// 处理当前 IfOp 与前一个 IfOp 的依赖关系
+SmallVector<std::pair<Value, Operation*>> ProcessIfOpWithDepstemp(scf::IfOp curIf, DenseSet<Value> &ifResultsValue,
+                                                                  DenseMap<scf::IfOp, SmallVector<Value>> &ifResultDeps)
+{
+  // 未考虑scf的嵌套关系
+  SmallVector<Value> deps;
+  SmallVector<std::pair<Value, Operation*>> depPairs;
+  llvm::outs() << "ifResultDeps.size()= " << ifResultDeps.size() << "\n";
+
+  auto checkRegion = [&](Region &region) {
+    for (auto &block : region) {
+      for (auto &op : block) {
+        for (Value operand : op.getOperands()) {
+          for (Value res : ifResultsValue) {
+            if (operand == res) {
+              deps.push_back(res);
+              depPairs.push_back({res, &op});
+            }
+          }
+        }
+      }
+    }
+  };
+
+  // 只检查 thenRegion，不考虑 elseRegion
+  checkRegion(curIf.getThenRegion());
+
+  for (auto v : curIf.getResults()) {
+    ifResultsValue.insert(v);
+  }
+
+  // 去重
+  DenseSet<std::pair<Value, Operation*>> depPairsSet(depPairs.begin(), depPairs.end());
+  SmallVector<std::pair<Value, Operation*>> uniqueDepPairs(depPairsSet.begin(), depPairsSet.end());
+
+  DenseSet<Value> depsSet(deps.begin(), deps.end());
+  SmallVector<Value> uniqueDeps(depsSet.begin(), depsSet.end());
+  ifResultDeps[curIf] = uniqueDeps;
+
+  return uniqueDepPairs;
+}
+
+SmallVector<std::pair<Value, Operation*>> findInnerScopeBuffer(scf::ForOp forOp, DenseMap<scf::IfOp, SmallVector<Value>> &ifResultDeps)
+{
+  // 寻找单个 for 循环内的 if bb块间核内依赖关系
+  SmallVector<Value> allDeps;
+  SmallVector<std::pair<Value, Operation*>> allDepPairs;
+  DenseSet<Value> ifResultsValue;
+
+  for (Operation &op : forOp.getBody()->without_terminator()) {
+    auto ifOp = dyn_cast<scf::IfOp>(op);
+    if (ifOp && ifOp->hasAttr("ssbuffer")) {
+      SmallVector<std::pair<Value, Operation*>> depPairs = ProcessIfOpWithDepstemp(ifOp, ifResultsValue, ifResultDeps);
+      if (!depPairs.empty())
+        allDepPairs.append(depPairs.begin(), depPairs.end());
+    }
+  }
+
+  return allDepPairs;
+}
+
+scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder,
+                         DenseMap<scf::ForOp, SmallVector<int>> &cntArgs, DenseMap<scf::ForOp, SmallVector<int>> &innerScopeBufferControlArgs)
+{
     // 1. 获取原始循环的信息
     Value originalLowerBound = forOp.getLowerBound();
     Value originalUpperBound = forOp.getUpperBound();
@@ -354,7 +442,7 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
         iterArgs.push_back(arg);
     }
     auto yields = forOp.getBody()->getTerminator();
-    
+
     // 2. 检查循环体中是否有特定操作
     int hasTargetOps = 0;
     forOp.walk([&](Operation* op) {
@@ -378,18 +466,38 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
     }
 
     builder.setInsertionPoint(scopeOp);
+    int iterArgsIdx = iterArgs.size();
+
+    // 添加 中间依赖变量所需的 iterargs
+    SmallVector<int> innerScopeBufferControlArgsIdx;
+    DenseMap<scf::IfOp, SmallVector<Value>> ifResultDeps;
+    ifResultDeps.clear();
+    auto innerScopeBuffer = findInnerScopeBuffer(forOp, ifResultDeps);
+    int zeroValue = 0;
+    int zeroType = 32;
+    for (int i = 0; i < innerScopeBuffer.size(); i++) {
+        counterInit = builder.create<arith::ConstantIntOp>(forOp.getLoc(), zeroValue, zeroType);
+        iterArgs.push_back(counterInit);
+        innerScopeBufferControlArgsIdx.push_back(iterArgsIdx);
+        iterArgsIdx++;
+    }
+
+    SmallVector<int> cntArgsIdx;
+
     for (int i = 0; i < hasTargetOps; i++) {
         Location loc = forOp.getLoc();
         auto argType = originalLowerBound.getType();
-        
+
         // 添加到迭代参数列表
         iterArgs.push_back(originalLowerBound);
+        cntArgsIdx.push_back(iterArgsIdx);
+        iterArgsIdx++;
     }
     // 2. 创建新的上界：originalUpperBound * 2
     Location loc = forOp.getLoc();
     Type ubType = originalStep.getType();
     builder.setInsertionPoint(forOp);
-    
+
     int count = 0;
     for (auto &op : forOp.getBody()->getOperations()) {
       if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
@@ -402,18 +510,18 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
 
     Value two;
     if (ubType.isIndex()) {
-        two = builder.create<arith::ConstantIndexOp>(loc, count - 1);
+        two = builder.create<arith::ConstantIndexOp>(loc, count);
     } else if (auto intType = dyn_cast<IntegerType>(ubType)) {
         // 对于整数类型，创建相应类型的常数2
-        two = builder.create<arith::ConstantIntOp>(loc, count - 1, intType);
+        two = builder.create<arith::ConstantIntOp>(loc, count, intType);
     } else {
         // 其他类型可能需要特殊处理
         llvm::errs() << "Warning: Unexpected type for upper bound: " << ubType << "\n";
         // 尝试创建索引类型的2然后转换
-        auto indexTwo = builder.create<arith::ConstantIndexOp>(loc, count - 1);
+        auto indexTwo = builder.create<arith::ConstantIndexOp>(loc, count);
         two = builder.create<arith::IndexCastOp>(loc, ubType, indexTwo);
     }
-    
+
     auto steps = builder.create<arith::MulIOp>(
         forOp.getLoc(),
         originalStep,
@@ -433,20 +541,20 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
         nowUpperBound,
         originalStep,
         iterArgs);
-    
+
     // 4. 设置IR映射表，将旧循环的变量映射到新循环
     IRMapping mapper;
-    
+
     // 映射迭代变量
     mapper.map(forOp.getInductionVar(), newForOp.getInductionVar());
-    
+
     // 映射迭代参数
-    for (auto [oldArg, newArg] : 
-         llvm::zip(forOp.getRegionIterArgs(), 
+    for (auto [oldArg, newArg] :
+         llvm::zip(forOp.getRegionIterArgs(),
                   newForOp.getRegionIterArgs())) {
         mapper.map(oldArg, newArg);
     }
-    
+
     SmallVector<Value> newCounterArgs;
     for (int i = forOp.getRegionIterArgs().size(); i < newForOp.getRegionIterArgs().size(); i++) {
         newCounterArgs.push_back(newForOp.getRegionIterArgs()[i]);
@@ -454,11 +562,11 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
     // 5. 克隆循环体内容到新循环
     auto &newLoopBody = *newForOp.getBody();
     builder.setInsertionPointToStart(&newLoopBody);
-    
+
     for (auto &op : forOp.getBody()->without_terminator()) {
         builder.clone(op, mapper);
     }
-    
+
     // 6. 克隆yield操作
     if (auto yieldOp = dyn_cast<scf::YieldOp>(yields)) {
         SmallVector<Value> newYieldOperands;
@@ -466,14 +574,14 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
             newYieldOperands.push_back(mapper.lookupOrDefault(operand));
         }
         if (hasTargetOps != 0) {
-            for (auto currentCounter : newCounterArgs) {                
+            for (auto currentCounter : newCounterArgs) {
                 // 将更新后的计数器添加到yield操作数中
                 newYieldOperands.push_back(currentCounter);
             }
         }
         builder.create<scf::YieldOp>(yieldOp.getLoc(), newYieldOperands);
     }
-    
+
     // 7. 替换原循环的结果
     if (hasTargetOps != 0) {
         // 新循环有额外的计数器结果，但原循环没有对应结果
@@ -487,25 +595,29 @@ scf::ForOp transformLoop(scf::ForOp forOp, OpBuilder &builder) {
     } else {
         forOp.replaceAllUsesWith(newForOp.getResults());
     }
-    
-    // 8. 删除原循环
+
+    // 8. 更新要传递的计数器的 iterarg 中的索引
+    cntArgs[newForOp] = cntArgsIdx;
+    innerScopeBufferControlArgs[newForOp] = innerScopeBufferControlArgsIdx;
+
+    // 9. 删除原循环
     forOp.erase();
     return newForOp;
-    
+
 }
 
 // Find the first occurrence of convert_layout or fixpipe operation after the specified operation
 Value findFirstTargetOpAfterWait(SyncBlockWaitOp waitOp, SmallVector<Value>& excludedValues)
 {
     bool startSearching = false;
-    
+
     for (Operation &op : waitOp->getBlock()->getOperations()) {
         Value res = nullptr;
         if (&op == waitOp) {
             startSearching = true;
             continue;
         }
-        
+
         if (startSearching) {
             if (isa<hivm::ConvertLayoutOp>(op)) {
                 res = op.getOperands()[0];
@@ -528,7 +640,7 @@ Value findFirstTargetOpAfterWait(SyncBlockWaitOp waitOp, SmallVector<Value>& exc
           return res;
         }
     }
-    
+
     return nullptr;
 }
 
@@ -585,6 +697,690 @@ DenseMap<int, int> getCounterOffset(scf::ForOp forOp) {
         }
     });
     return bufferMap;
+}
+
+SmallVector<Value> findCrossScopeBuffer(ModuleOp module)
+{
+  SmallVector<Value> crossScopeBuffer;
+  // 只收集 moduleOp 顶部的 allocOp，不递归进入scope中
+  for (Operation& tempOp : module.getBody()->getOperations()) {
+    if (auto funcOp = dyn_cast<triton::FuncOp>(tempOp)) {
+      for (Operation& op : funcOp.getBlocks().front().getOperations()) {
+        llvm::outs() << op << "\n";
+        if (auto allocOp = dyn_cast<memref::AllocOp>(&op)) {
+          crossScopeBuffer.push_back(allocOp.getResult());
+        }
+      }
+    }
+  }
+  return crossScopeBuffer;
+}
+
+bool isValueExternalToIf(ModuleOp module, scf::IfOp ifOp, Value value)
+{
+  auto forOp = ifOp->getParentOp();
+  if (!forOp) {
+    llvm::outs() << "ifop's parrent op is not forop\n";
+    return false;
+  }
+
+  Operation* definingOp = value.getDefiningOp();
+  Operation* currentOp = nullptr;
+  Operation* parentOp = nullptr;
+
+  if (definingOp) {
+    // 情况1：Value由某个Op定义
+    parentOp = definingOp->getParentOp();
+    if (dyn_cast<memref::AllocOp>(definingOp)) {
+      // alloc Op 是 CV核传输buffer
+      return true;
+    }
+  } else {
+    // 情况2：Value是块参数(BlockArgument)，取其所属块的父Op
+    Block* argBlock = dyn_cast<BlockArgument>(value).getOwner();
+    currentOp = argBlock->getParentOp();
+    if (dyn_cast<scf::ForOp>(currentOp) == forOp) {
+      return false;
+    }
+    parentOp = currentOp->getParentOp();
+  }
+  // llvm::outs() << "parentOp : " << *parentOp << "\n";
+
+  // Step2: 向上遍历所有父Op，检查是否在 If内部 / For内部
+  while (parentOp != module) {
+  // llvm::outs() << "loop parentOp : " << *parentOp << "\n";
+    // 找到scf::ifOp -> 定义if block块内 -> 内部变量
+    if (parentOp == ifOp) {
+      return false;
+    }
+    // 找到scf::ForOp -> 定义在和if同级的for block块内 -> 块间依赖变量
+    if (parentOp == forOp) {
+      return true;
+    }
+    // 继续向上查找父节点
+    parentOp = parentOp->getParentOp();
+  }
+  // 遍历完所有祖先，都没找到If/For → 定义在最外层 → 外部值 → 但不是另一个scope的值
+  return false;
+}
+
+void addSSBufferInit(ModuleOp module, SmallVector<Value> crossScopeBuffer, int bufAddrOffset, int vecAddrOffset)
+{
+  mlir::OpBuilder builder(module.getContext());
+  auto i64Type = builder.getIntegerType(64);
+  auto i32Type = builder.getIntegerType(32);
+  auto initPtrType = mlir::LLVM::LLVMPointerType::get(builder.getContext(), 11);
+
+  module->walk([&](mlir::Operation* op) {
+    if (auto scopeOp = dyn_cast<scope::ScopeOp>(op)) {
+      builder.setInsertionPoint(scopeOp);
+        auto c0i32ConstAttr = mlir::IntegerAttr::get(i32Type, 0);
+        auto zeroConst = builder.create<mlir::LLVM::ConstantOp>(scopeOp->getLoc(), i32Type, c0i32ConstAttr);
+
+      for (int i = 0; i < crossScopeBuffer.size(); i++) {
+        auto vec0ConstAttr = mlir::IntegerAttr::get(i64Type, i*bufAddrOffset);
+        auto vec1ConstAttr = mlir::IntegerAttr::get(i64Type, i*bufAddrOffset + vecAddrOffset);
+
+        auto vec0AddrConst = builder.create<mlir::LLVM::ConstantOp>(scopeOp->getLoc(), i64Type, vec0ConstAttr);
+        auto vec1AddrConst = builder.create<mlir::LLVM::ConstantOp>(scopeOp->getLoc(), i64Type, vec1ConstAttr);
+
+        auto vec0AddrPtr = builder.create<mlir::LLVM::IntToPtrOp>(scopeOp->getLoc(), initPtrType, vec0AddrConst.getResult());
+        auto vec1AddrPtr = builder.create<mlir::LLVM::IntToPtrOp>(scopeOp->getLoc(), initPtrType, vec1AddrConst.getResult());
+
+        builder.create<LLVM::StoreOp>(scopeOp->getLoc(), zeroConst, vec0AddrPtr);
+        builder.create<LLVM::StoreOp>(scopeOp->getLoc(), zeroConst, vec1AddrPtr);
+      }
+      return mlir::WalkResult::interrupt();
+    }
+    return mlir::WalkResult::advance();
+  });
+}
+
+void getInputAndOutput(scf::IfOp ifOp, ModuleOp module, SmallVector<Value> &ifInputValue, SmallVector<Value> &ifOutputValue,
+                       SmallVector<Value> innerScopeBuffer)
+{
+  // 用 Set 去重，避免重复收集同一个 Value
+  DenseSet<Value> inputSet;
+  DenseSet<Value> outputSet;
+
+  // 遍历当前 op 的所有操作数
+  WalkResult walkResult = ifOp.walk([&](Operation *op) {
+    if (op == ifOp) {
+      return mlir::WalkResult::advance();
+    } else if (dyn_cast<hivm::FixpipeOp>(op) || dyn_cast<hivm::CopyOp>(op)) {
+      // 如果是带ins 和 outs 的 op
+      Value inVal = op->getOperands()[0];
+      if (isValueExternalToIf(module, ifOp, inVal)) {
+          llvm::outs() << "isValueExternalToIf: " << inVal << "\n";
+        inputSet.insert(inVal);
+      }
+
+      Value outVal = op->getOperands()[1];
+      if (isValueExternalToIf(module, ifOp, outVal)) {
+          llvm::outs() << "isValueExternalToIf: " << outVal << "\n";
+        outputSet.insert(outVal);
+      }
+    } else {
+      // 如果是正常op
+      for (Value operand : op->getOperands()) {
+        if (isValueExternalToIf(module, ifOp, operand)) {
+          llvm::outs() << "isValueExternalToIf: " << operand << "\n";
+          inputSet.insert(operand);
+        }
+      }
+      // 还有如果是scf的op，跳过
+    }
+    return WalkResult::advance();
+  });
+
+  // IfOp 自身的结果也可能是外部输出
+  for (Value res : ifOp.getResults()) {
+    if (llvm::is_contained(innerScopeBuffer, res))
+        outputSet.insert(res);
+  }
+
+  // ==============================================
+  // 最终把去重后的结果转入输出参数
+  // ==============================================
+  ifInputValue.assign(inputSet.begin(), inputSet.end());
+  ifOutputValue.assign(outputSet.begin(), outputSet.end());
+}
+
+SmallVector<Value> addBufValLoopV2(scf::ForOp forOp, OpBuilder &builder, ModuleOp module,
+                                   DenseMap<scf::ForOp, SmallVector<int>> cntArgs,
+                                   DenseMap<scf::ForOp, SmallVector<int>> innerScopeBufferControlArgs,
+                                   SmallVector<Value> crossScopeBuffer, SmallVector<int> crossScopeBufferNum,
+                                   SmallVector<std::pair<Value, Operation*>> innerScopeBufferPairs, SmallVector<int> innerScopeBufferNum)
+{
+    auto aiCAttr = hivm::TCoreTypeAttr::get(builder.getContext(), hivm::TCoreType::CUBE);
+    bool isAIC = false;
+    // 向上查找父scope.scope操作
+    mlir::Operation* parentOp = forOp->getParentOp();
+    mlir::Operation* scopeOp = nullptr;
+    // 向上遍历查找scope.scope操作
+    while (parentOp) {
+        if (dyn_cast<scope::ScopeOp>(parentOp)) {
+            scopeOp = parentOp;
+            break;
+        }
+        parentOp = parentOp->getParentOp();
+    }
+    if (scopeOp->hasAttr("hivm.tcore_type")) {
+        auto attr = scopeOp->getAttr("hivm.tcore_type");
+        if (attr == aiCAttr) {
+            isAIC = true;
+        }
+    }
+    auto bufferMap = getCounterOffset(forOp);
+    SmallVector<Value> buf_vals;
+    builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
+
+    // 计算计数器所需要的 step 和 end
+    // 1. 提取并处理end值
+    Value startValue = forOp.getLowerBound();
+    Value endValue = forOp.getUpperBound();
+    // 2. 提取并处理step值
+    Value stepValue = forOp.getStep();
+    builder.setInsertionPoint(forOp);
+    Location loc = forOp.getLoc();
+    int count = 0;
+    for (auto &op : forOp.getBody()->getOperations()) {
+      if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
+        auto parentOp = ifOp->getParentOp();
+        if (parentOp == forOp && ifOp->hasAttr("ssbuffer")) {
+          count++;
+        }
+      }
+    }
+
+    Value two;
+    Type ubType = stepValue.getType();
+    if (ubType.isIndex()) {
+        two = builder.create<arith::ConstantIndexOp>(loc, count);
+    } else if (auto intType = dyn_cast<IntegerType>(ubType)) {
+        // 对于整数类型，创建相应类型的常数2
+        two = builder.create<arith::ConstantIntOp>(loc, count, intType);
+    } else {
+        // 其他类型可能需要特殊处理
+        llvm::errs() << "Warning: Unexpected type for upper bound: " << ubType << "\n";
+        // 尝试创建索引类型的2然后转换
+        auto indexTwo = builder.create<arith::ConstantIndexOp>(loc, count);
+        two = builder.create<arith::IndexCastOp>(loc, ubType, indexTwo);
+    }
+
+    auto steps = builder.create<arith::MulIOp>(
+        forOp.getLoc(),
+        endValue.getType(),
+        stepValue,
+        two
+    );
+
+    auto subLoopValue = builder.create<arith::SubIOp>(
+        forOp.getLoc(),
+        endValue.getType(),
+        endValue,
+        steps
+    );
+
+    SmallVector<Value> totalBuffer;
+    SmallVector<int> totalBufferNum;
+    SmallVector<Value> innerScopeBuffer;
+    for (auto pair : innerScopeBufferPairs) {
+      innerScopeBuffer.push_back(pair.first);
+    }
+    totalBuffer.append(crossScopeBuffer);
+    totalBuffer.append(innerScopeBuffer);
+    totalBufferNum.append(crossScopeBufferNum);
+    totalBufferNum.append(innerScopeBufferNum);
+
+    SmallVector<Value> ifConditions;
+    int ifCounterIdx = 0;
+
+    if (isAIC) {
+      // --------------------------------------------------------------------------
+      // cube Scope: 创建 vec0 和 vec1 所需要的 ssbuffer 地址和指针
+      // vec0: buff1 addr: 0;  buff2 addr: 4;  buff3 addr: 8; ... ...
+      // vec1: buff1 addr: 1024;  buff2 addr: 1028;  buff3 addr: 1032; ... ...
+      auto i64Type = builder.getIntegerType(64);
+      int vec1Offset = 1024;
+
+      // 创建所有 ssb 地址和指针
+      SmallVector<Value> vec0BufferPtrs;
+      SmallVector<Value> vec1BufferPtrs;
+      SmallVector<Value> ssbVec0Values;
+      SmallVector<Value> ssbVec1Values;
+      for (int i = 0; i < crossScopeBuffer.size(); i++) {
+        builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
+        auto ssbVec0eAddr = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 4*i, 64);
+        auto ssbVec1eAddr = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 4*i + vec1Offset, 64);
+        Value ssbVec0Ptr = builder.create<LLVM::IntToPtrOp>(scopeOp->getLoc(), LLVM::LLVMPointerType::get(builder.getContext(), 11), ssbVec0eAddr);
+        Value ssbVec1Ptr = builder.create<LLVM::IntToPtrOp>(scopeOp->getLoc(), LLVM::LLVMPointerType::get(builder.getContext(), 11), ssbVec1eAddr);
+        vec0BufferPtrs.push_back(ssbVec0Ptr);
+        vec1BufferPtrs.push_back(ssbVec1Ptr);
+
+        // 在 for 循环顶部 load ptr
+        builder.setInsertionPointToStart(&forOp->getRegion(0).front());
+        Value ssbVce0Value = builder.create<LLVM::LoadOp>(forOp.getLoc(), builder.getI32Type(), ssbVec0Ptr);
+        Value ssbVce1Value = builder.create<LLVM::LoadOp>(forOp.getLoc(), builder.getI32Type(), ssbVec1Ptr);
+        ssbVec0Values.push_back(ssbVce0Value);
+        ssbVec1Values.push_back(ssbVce1Value);
+      }
+
+      // 创建所有 bufferNum 的常量和零常量
+      SmallVector<Value> buffNumConsts;
+      builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
+      for (int buffNum : totalBufferNum) {
+        auto buffNumConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), buffNum, 32);
+        buffNumConsts.push_back(buffNumConst);
+      }
+      Value zeroConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 0, 32);
+      Value oneConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 1, 32);
+
+      // --------------------------------------------------------------------------
+      // 分析每个 if 块的输入和输出
+      // 判断其输入输出输出是否为外部 Value
+      // 收集 if 块所有的外部输入和所有的外部输出，判断是否全都在先前收集的核内或核间buffer范围内
+      forOp.getBody()->walk([&](Operation* op) {
+        auto ifOp = dyn_cast<scf::IfOp>(op);
+        if (ifOp && ifOp->hasAttr("ssbuffer")) {
+          SmallVector<Value> ifInputValue;
+          SmallVector<Value> ifOutputValue;
+          llvm::outs() << "start getInputAndOutput\n";
+          getInputAndOutput(ifOp, module, ifInputValue, ifOutputValue, innerScopeBuffer);
+          llvm::outs() << "ifInputValue: "<< ifInputValue.size() << "\n";
+          for (int i = 0; i < ifInputValue.size() ; i++) {
+            llvm::outs() << "ifInputValue: " << ifInputValue[i] << "\n";
+            assert(llvm::is_contained(totalBuffer, ifInputValue[i]));
+          }
+          llvm::outs() << "ifOutputValue: "<< ifOutputValue.size() << "\n";
+          for (int i = 0; i < ifOutputValue.size() ; i++) {
+            llvm::outs() << "ifOutputValue: " << ifOutputValue[i] << "\n";
+            assert(llvm::is_contained(totalBuffer, ifOutputValue[i]));
+          }
+
+          // --------------------------------------------------------------------------
+          // 根据上面的输入和输出找到控制对应 buffer 的控制变量
+          // ssbVec0Values 用于控制corssScopeBuf: [ssbValue0, ssbValue1 , ..., ssbValue n]
+          // ssbVec1Values 用于控制corssScopeBuf: [ssbValue0, ssbValue1 , ..., ssbValue n]
+          // innerScopeBufferControlArgs 用于控制innerScopeBuf: [ControlArg0, ControlArg1, ..., ControlArg m]
+          // totalVec0ControlValues: [ssbVec0Values, innerScopeBufferControlArgs[forOp]]
+          // totalVec1ControlValues: [ssbVec1Values, innerScopeBufferControlArgs[forOp]]
+          // totalBuffer: [crossScopeBuf0, crossScopeBuf1, ..., crossScopeBuf n, innerScopeBuf0, ..., innerScopeBuf m];
+          // 输入条件为控制变量大于0，输出条件为控制变量小于 bufferNum
+          SmallVector<Value> totalVec0ControlValues(ssbVec0Values.begin(), ssbVec0Values.end());
+          SmallVector<Value> totalVec1ControlValues(ssbVec1Values.begin(), ssbVec1Values.end());
+          for (int idx : innerScopeBufferControlArgs[forOp]) {
+            totalVec0ControlValues.push_back(forOp.getRegionIterArg(idx));
+            totalVec1ControlValues.push_back(forOp.getRegionIterArg(idx));
+          }
+
+          // 输入条件：控制变量大于0
+          Value conditions = nullptr;
+          for (Value v : ifInputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            if (llvm::is_contained(crossScopeBuffer, v)) {
+              // 当外部输入是核间buffer时，才需要同时处理vec0和vec1
+              builder.setInsertionPoint(ifOp);
+              auto vec0InputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::sgt, totalVec0ControlValues[bufferIndex], zeroConst);
+              auto vec1InputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::sgt, totalVec1ControlValues[bufferIndex], zeroConst);
+              auto combineVecCond = builder.create<arith::AndIOp>(forOp.getLoc(), vec0InputCondition, vec0InputCondition);
+
+              // 连接当前条件和先前判断条件
+              if (conditions) {
+                conditions = builder.create<arith::AndIOp>(forOp.getLoc(), conditions, combineVecCond);
+              } else {
+                conditions = combineVecCond;
+              }
+            } else {
+              // 外部输入是核内buffer
+              builder.setInsertionPoint(ifOp);
+              auto inputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::sgt, totalVec0ControlValues[bufferIndex], zeroConst);
+
+              // 连接当前条件和先前判断条件
+              if (conditions) {
+                conditions = builder.create<arith::AndIOp>(forOp.getLoc(), conditions, inputCondition);
+              } else {
+                conditions = inputCondition;
+              }
+            }
+          }
+
+          // 输出条件：控制变量小于bufferNum
+          for (Value v : ifOutputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            if (llvm::is_contained(crossScopeBuffer, v)) {
+              // 当外部输入是核间buffer时，才需要同时处理vec0和vec1
+              builder.setInsertionPoint(ifOp);
+              auto Vec0OutputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::slt, totalVec0ControlValues[bufferIndex], buffNumConsts[bufferIndex]);
+              auto Vec1OutputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::slt, totalVec1ControlValues[bufferIndex], buffNumConsts[bufferIndex]);
+              auto combineVecCond = builder.create<arith::AndIOp>(forOp.getLoc(), Vec0OutputCondition, Vec1OutputCondition);
+
+              // 连接当前条件和先前判断条件
+              if (conditions) {
+                conditions = builder.create<arith::AndIOp>(forOp.getLoc(), conditions, combineVecCond);
+              } else {
+                conditions = combineVecCond;
+              }
+            } else {
+              // 外部输入是核内buffer
+              builder.setInsertionPoint(ifOp);
+              auto outputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::slt, totalVec0ControlValues[bufferIndex], buffNumConsts[bufferIndex]);
+              // 连接当前条件和先前判断条件
+              if (conditions) {
+                conditions = builder.create<arith::AndIOp>(forOp.getLoc(), outputCondition, conditions);
+              } else {
+                conditions = outputCondition;
+              }
+            }
+          }
+
+          // 计数器控制条件
+          builder.setInsertionPoint(ifOp);
+          Value cnti = builder.create<arith::CmpIOp>(forOp.getLoc(), arith::CmpIPredicate::slt,
+                                                  forOp.getRegionIterArgs()[cntArgs[forOp][ifCounterIdx]], subLoopValue);
+          conditions = builder.create<arith::AndIOp>(forOp.getLoc(), conditions, cnti);
+          ifConditions.push_back(conditions);
+          ifCounterIdx++;
+          // --------------------------------------------------------------------------
+
+          // --------------------------------------------------------------------------
+          // 根据上面的输入和输出找到控制对应 buffer 的控制变量
+          // 在 if 块块尾，输入buffer对应的控制变量写入+1，输出buffer对应的控制变量写入-1
+          Block* thenBlock = &ifOp.getThenRegion().front();
+          auto yieldOp = dyn_cast<scf::YieldOp>(ifOp.getThenRegion().front().getTerminator());
+          builder.setInsertionPoint(yieldOp);
+
+          // 输入buffer: 控制变量 -1
+          for (Value v : ifInputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            if (llvm::is_contained(crossScopeBuffer, v)) {
+              Value vec0ReadControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vec0BufferPtrs[bufferIndex]);
+              Value vec1ReadControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vec1BufferPtrs[bufferIndex]);
+
+              auto vec0NewControlValue = builder.create<arith::SubIOp>(yieldOp->getLoc(), vec0ReadControlValue, oneConst);
+              auto vec1NewControlValue = builder.create<arith::SubIOp>(yieldOp->getLoc(), vec1ReadControlValue, oneConst);
+
+              auto vec0StoredValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), vec0NewControlValue, vec0BufferPtrs[bufferIndex]);
+              auto vec1StoredValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), vec1NewControlValue, vec1BufferPtrs[bufferIndex]);
+            } else {
+              auto newControlValue = builder.create<arith::SubIOp>(yieldOp->getLoc(), totalVec0ControlValues[bufferIndex], oneConst);
+            }
+          }
+
+          // 输出buffer: 控制变量 +1
+          for (Value v : ifOutputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            if (llvm::is_contained(crossScopeBuffer, v)) {
+              Value vec0ReadControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vec0BufferPtrs[bufferIndex]);
+              Value vec1ReadControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vec1BufferPtrs[bufferIndex]);
+
+              auto vec0NewControlValue = builder.create<arith::AddIOp>(yieldOp->getLoc(), vec0ReadControlValue, oneConst);
+              auto vec1NewControlValue = builder.create<arith::AddIOp>(yieldOp->getLoc(), vec1ReadControlValue, oneConst);
+
+              auto vec0StoredValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), vec0NewControlValue, vec0BufferPtrs[bufferIndex]);
+              auto vec1StoredValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), vec1NewControlValue, vec1BufferPtrs[bufferIndex]);
+            } else {
+              auto newControlValue = builder.create<arith::AddIOp>(yieldOp->getLoc(), totalVec0ControlValues[bufferIndex], oneConst);
+            }
+          }
+        }
+      });
+    } else {
+      // --------------------------------------------------------------------------
+      // vector Scope 仅需要修改对应的 vec buffer
+      builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
+
+      // %sub_id = hivm.hir.get_sub_block_idx -> i64
+      // %addrOffset = arith.muli %sub_id, %vec1offset : i64
+      // %ptrAddr = arith.addi %addrOffset, %baseAddr : i64
+      auto i64Type = builder.getIntegerType(64);
+      int vec1Offset = 1024;
+      Value vec1OffsetValue = builder.create<arith::ConstantIntOp>(forOp.getLoc(), vec1Offset, 64);
+      auto subIdOp = builder.create<GetSubBlockIdxOp>(scopeOp->getLoc(), i64Type);
+      auto ssbAddrOffset = builder.create<arith::MulIOp>(scopeOp->getLoc(), subIdOp, vec1OffsetValue);
+
+      // 创建所有 ssb 地址和指针
+      SmallVector<Value> vecBufferPtrs;
+      for (int i = 0; i < crossScopeBuffer.size(); i++) {
+        auto ssbBaseAddr = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 4*i, 64);
+        auto ssbAddr = builder.create<arith::AddIOp>(scopeOp->getLoc(), ssbBaseAddr, ssbAddrOffset);
+        Value ssbPtr = builder.create<LLVM::IntToPtrOp>(scopeOp->getLoc(), LLVM::LLVMPointerType::get(builder.getContext(), 11), ssbAddr);
+        vecBufferPtrs.push_back(ssbPtr);
+      }
+
+      // load 所有控制变量
+      SmallVector<Value> ssbValues;
+      builder.setInsertionPointToStart(&forOp->getRegion(0).front());
+      for (Value ptr : vecBufferPtrs) {
+        Value ssbValue = builder.create<LLVM::LoadOp>(forOp.getLoc(), builder.getI32Type(), ptr);
+        ssbValues.push_back(ssbValue);
+      }
+
+      // 创建所有 bufferNum 的常量和零常量
+      SmallVector<Value> buffNumConsts;
+      builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
+      for (int buffNum : totalBufferNum) {
+        auto buffNumConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), buffNum, 32);
+        buffNumConsts.push_back(buffNumConst);
+      }
+      Value zeroConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 0, 32);
+      Value oneConst = builder.create<arith::ConstantIntOp>(scopeOp->getLoc(), 1, 32);
+
+      // --------------------------------------------------------------------------
+      // 分析每个 if 块的输入和输出
+      // 判断其输入输出输出是否为外部 Value
+      // 收集 if 块所有的外部输入和所有的外部输出，判断是否全都在先前收集的核内或核间buffer范围内
+
+      forOp.getBody()->walk([&](Operation* op) {
+        auto ifOp = dyn_cast<scf::IfOp>(op);
+        if (ifOp && ifOp->hasAttr("ssbuffer")) {
+          SmallVector<Value> ifInputValue;
+          SmallVector<Value> ifOutputValue;
+          getInputAndOutput(ifOp, module, ifInputValue, ifOutputValue, innerScopeBuffer);
+
+          // --------------------------------------------------------------------------
+          // 根据上面的输入和输出找到控制对应 buffer 的控制变量
+          // ssbValues 用于控制corssScopeBuf: [ssbValue0, ssbValue1 , ..., ssbValue n]
+          // innerScopeBufferControlArgs 用于控制innerScopeBuf: [ControlArg0, ControlArg1, ..., ControlArg m]
+          // totalControlValues: [ssbValues, innerScopeBufferControlArgs[forOp]]
+          // totalBuffer: [crossScopeBuf0, crossScopeBuf1, ..., crossScopeBuf n, innerScopeBuf0, ..., innerScopeBuf m];
+          // 输入条件为控制变量大于0，输出条件为控制变量小于 bufferNum，最后加上计数器的条件
+          SmallVector<Value> totalControlValues(ssbValues.begin(), ssbValues.end());
+          for (int idx : innerScopeBufferControlArgs[forOp]) {
+            totalControlValues.push_back(forOp.getRegionIterArg(idx));
+          }
+
+          Value conditions = nullptr;
+          for (Value v : ifInputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            // 如果输入是核内buffer，需要确认该核内buffer是否被多个if消耗
+            if (llvm::is_contained(innerScopeBuffer, v)) {
+              SmallVector<int> multiInnerIdxs;
+              for (auto [idx, innerDepValue] : llvm::enumerate(innerScopeBuffer)) {
+                if (v == innerDepValue) {
+                  multiInnerIdxs.push_back(idx);
+                }
+              }
+              // 如果有一个依赖变量作为多个if的输入，要确定使用哪个控制变量
+              if (multiInnerIdxs.size() > 1) {
+                llvm::outs() << "has multiInner input\n\n";
+                SmallVector<Operation *> multiInnerBufferComsummerOps;
+                for (auto pair : innerScopeBufferPairs) {
+                  multiInnerBufferComsummerOps.push_back(pair.second);
+                }
+
+                int comsumerOpIdx = -1;
+                ifOp.walk([&](Operation* opInIf) {
+                  if (llvm::is_contained(multiInnerBufferComsummerOps, opInIf)) {
+                    auto i = llvm::find(multiInnerBufferComsummerOps, opInIf);
+                    comsumerOpIdx = std::distance(multiInnerBufferComsummerOps.begin(), i);
+                    return mlir::WalkResult::interrupt();
+                  }
+                  return mlir::WalkResult::advance();
+                });
+                if (comsumerOpIdx >= 0)
+                  bufferIndex = multiInnerIdxs[comsumerOpIdx] + crossScopeBuffer.size();
+              }
+            }
+
+            // 输入条件：控制变量大于0
+            builder.setInsertionPoint(ifOp);
+            auto inputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                          arith::CmpIPredicate::sgt, totalControlValues[bufferIndex], zeroConst);
+            // 连接当前条件和先前判断条件
+            if (conditions) {
+              conditions = builder.create<arith::AndIOp>(forOp.getLoc(), inputCondition, conditions);
+            } else {
+              conditions = inputCondition;
+            }
+          }
+
+          for (Value v : ifOutputValue) {
+            SmallVector<int> bufferIndexs;
+            // 如果输出是核内buffer，需要确认该核内buffer是否被多个if消耗
+            if (llvm::is_contained(innerScopeBuffer, v)) {
+              for (auto [idx, innerDepValue] : llvm::enumerate(innerScopeBuffer)) {
+                if (v == innerDepValue) {
+                  bufferIndexs.push_back(idx + crossScopeBuffer.size());
+                }
+              }
+              // 如果该依赖变量输出给多个if的，则每个控制变量都需要加入到条件中
+              if (bufferIndexs.size() > 1) {
+                llvm::outs() << "has multiInner output\n\n";
+              }
+            } else {
+              for (auto [idx, buffer] : llvm::enumerate(totalBuffer)) {
+                if (v == buffer) {
+                  bufferIndexs.push_back(idx);
+                }
+              }
+            }
+
+            for (int bufferIndex : bufferIndexs) {
+              // 输出条件：控制变量小于bufferNum
+              builder.setInsertionPoint(ifOp);
+              auto outputCondition = builder.create<arith::CmpIOp>(forOp.getLoc(),
+                                            arith::CmpIPredicate::slt, totalControlValues[bufferIndex], buffNumConsts[bufferIndex]);
+              // 连接当前条件和先前判断条件
+              if (conditions) {
+                conditions = builder.create<arith::AndIOp>(forOp.getLoc(), outputCondition, conditions);
+              } else {
+                conditions = outputCondition;
+              }
+            }
+          }
+
+          // 计数器控制条件
+          builder.setInsertionPoint(ifOp);
+          Value cnti = builder.create<arith::CmpIOp>(forOp.getLoc(), arith::CmpIPredicate::slt,
+                                                  forOp.getRegionIterArgs()[cntArgs[forOp][ifCounterIdx]], subLoopValue);
+          conditions = builder.create<arith::AndIOp>(forOp.getLoc(), conditions, cnti);
+          ifConditions.push_back(conditions);
+          ifCounterIdx++;
+          // --------------------------------------------------------------------------
+
+          // --------------------------------------------------------------------------
+          // 根据上面的输入和输出找到控制对应 buffer 的控制变量
+          // 在 if 块块尾，输入buffer对应的控制变量写入+1，输出buffer对应的控制变量写入-1
+          Block* thenBlock = &ifOp.getThenRegion().front();
+          auto yieldOp = dyn_cast<scf::YieldOp>(ifOp.getThenRegion().front().getTerminator());
+          builder.setInsertionPoint(yieldOp);
+
+          // 输入buffer: 控制变量 -1
+          for (Value v : ifInputValue) {
+            auto iter = llvm::find(totalBuffer, v);
+            int bufferIndex = std::distance(totalBuffer.begin(), iter);
+
+            // 如果输入是核内buffer，需要确认该核内buffer是否被多个if消耗
+            if (llvm::is_contained(innerScopeBuffer, v)) {
+              SmallVector<int> multiInnerIdxs;
+              for (auto [idx, innerDepValue] : llvm::enumerate(innerScopeBuffer)) {
+                if (v == innerDepValue) {
+                  multiInnerIdxs.push_back(idx);
+                }
+              }
+              // 如果有一个依赖变量作为多个if的输入，要确定使用哪个控制变量
+              if (multiInnerIdxs.size() > 1) {
+                llvm::outs() << "has multiInner input\n\n";
+                SmallVector<Operation *> multiInnerBufferComsummerOps;
+                for (auto pair : innerScopeBufferPairs) {
+                  multiInnerBufferComsummerOps.push_back(pair.second);
+                }
+
+                int comsumerOpIdx = -1;
+                ifOp.walk([&](Operation* opInIf) {
+                  if (llvm::is_contained(multiInnerBufferComsummerOps, opInIf)) {
+                    auto i = llvm::find(multiInnerBufferComsummerOps, opInIf);
+                    comsumerOpIdx = std::distance(multiInnerBufferComsummerOps.begin(), i);
+                    return mlir::WalkResult::interrupt();
+                  }
+                  return mlir::WalkResult::advance();
+                });
+                if (comsumerOpIdx >= 0)
+                  bufferIndex = multiInnerIdxs[comsumerOpIdx] + crossScopeBuffer.size();
+              }
+            }
+
+            if (llvm::is_contained(crossScopeBuffer, v)) {
+              Value readControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vecBufferPtrs[bufferIndex]);
+              auto newControlValue = builder.create<arith::SubIOp>(yieldOp->getLoc(), readControlValue, oneConst);
+              auto storedValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), newControlValue, vecBufferPtrs[bufferIndex]);
+            } else {
+              auto newControlValue = builder.create<arith::SubIOp>(yieldOp->getLoc(), totalControlValues[bufferIndex], oneConst);
+            }
+          }
+
+          // 输出buffer: 控制变量 +1
+          for (Value v : ifOutputValue) {
+            SmallVector<int> bufferIndexs;
+            // 如果输出是核内buffer，需要确认该核内buffer是否被多个if消耗
+            if (llvm::is_contained(innerScopeBuffer, v)) {
+              for (auto [idx, innerDepValue] : llvm::enumerate(innerScopeBuffer)) {
+                if (v == innerDepValue) {
+                  bufferIndexs.push_back(idx + crossScopeBuffer.size());
+                }
+              }
+              // 如果该依赖变量输出给多个if的，则每个控制变量都需要加入到条件中
+              if (bufferIndexs.size() > 1) {
+                llvm::outs() << "has multiInner output\n\n";
+              }
+            } else {
+              for (auto [idx, buffer] : llvm::enumerate(totalBuffer)) {
+                if (v == buffer) {
+                  bufferIndexs.push_back(idx);
+                }
+              }
+            }
+            for (int bufferIndex : bufferIndexs) {
+              if (llvm::is_contained(crossScopeBuffer, v)) {
+                Value readControlValue = builder.create<LLVM::LoadOp>(yieldOp->getLoc(), builder.getIntegerType(32), vecBufferPtrs[bufferIndex]);
+                auto newControlValue = builder.create<arith::AddIOp>(yieldOp->getLoc(), readControlValue, oneConst);
+                auto storedValue = builder.create<LLVM::StoreOp>(yieldOp->getLoc(), newControlValue, vecBufferPtrs[bufferIndex]);
+              } else {
+                auto newControlValue = builder.create<arith::AddIOp>(yieldOp->getLoc(), totalControlValues[bufferIndex], oneConst);
+              }
+            }
+          }
+        }
+      });
+    }
+    return ifConditions;
 }
 
 SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMap, DenseMap<Value, int>CubeBitMap, OpBuilder &builder)
@@ -693,7 +1489,7 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
         Value status_vec0 = builder.create<LLVM::LoadOp>(
             forOp.getLoc(), builder.getI32Type(), ssb_vec0_ptr
         );
-        
+
         Value status_vec1 = builder.create<LLVM::LoadOp>(
             forOp.getLoc(), builder.getI32Type(), ssb_vec1_ptr
         );
@@ -736,7 +1532,7 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
             );
             buf_vals.push_back(bufi_val);
         }
-        
+
     } else {
         builder.setInsertionPointToStart(&scopeOp->getRegion(0).front());
         Value c0 = builder.create<arith::ConstantIntOp>(
@@ -799,14 +1595,14 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
         if (bufferMap[groupIdx] == 0) {
             continue;
         }
-        
+
         // 获取对应的region迭代参数
         Value cnti = builder.create<arith::CmpIOp>(
-            forOp.getLoc(), arith::CmpIPredicate::slt, 
-            forOp.getRegionIterArgs()[forOp.getRegionIterArgs().size() - (bufferMap.size() - 1 - groupIdx)], 
+            forOp.getLoc(), arith::CmpIPredicate::slt,
+            forOp.getRegionIterArgs()[forOp.getRegionIterArgs().size() - (bufferMap.size() - 1 - groupIdx)],
             subLoopValue
         );
-        
+
         // 计算该组中所有buffer值的AND
         Value finalBufVal = buf_vals[bufIdx];
         for (int count = 1; count < bufferMap[groupIdx]; count++) {
@@ -814,12 +1610,12 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
                 forOp.getLoc(), finalBufVal, buf_vals[bufIdx + count]
             );
         }
-        
+
         auto cond = builder.create<arith::AndIOp>(
             forOp.getLoc(), finalBufVal, cnti
         );
         if_conditions.push_back(cond);
-        
+
         // 更新索引
         bufIdx += bufferMap[groupIdx];
         groupIdx++;
@@ -835,7 +1631,7 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
       if (ifOp && ifOp->hasAttr("ssbuffer")) {
         // 获取then区域
         Block* thenBlock = &ifOp.getThenRegion().front();
-        
+
         // 找到then区域中的yield操作
         Operation* yieldOp = nullptr;
         for (auto& op : *thenBlock) {
@@ -846,17 +1642,17 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
         }
         if (yieldOp) {
             builder.setInsertionPoint(yieldOp);
-            
+
             if (isAIC) {
                 // 创建插入的语句
                 // %status_v2 = llvm.load %ssb_ptr : !llvm.ptr<11> -> i32
                 Value status_v2_0 = builder.create<LLVM::LoadOp>(
-                    yieldOp->getLoc(), 
+                    yieldOp->getLoc(),
                     builder.getIntegerType(32),  // i32类型
                     bufferPtrs[0]  // 假设ssb_ptr已在作用域中定义
                 );
                 Value status_v2_1 = builder.create<LLVM::LoadOp>(
-                    yieldOp->getLoc(), 
+                    yieldOp->getLoc(),
                     builder.getIntegerType(32),  // i32类型
                     bufferPtrs[1]  // 假设ssb_ptr已在作用域中定义
                 );
@@ -911,13 +1707,13 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
                     buf_val_new_1,
                     bufferPtrs[1]
                 );
-                
+
             }
             else {
                 // 创建插入的语句
                 // %status_v2 = llvm.load %ssb_ptr : !llvm.ptr<11> -> i32
                 Value status_v2 = builder.create<LLVM::LoadOp>(
-                    yieldOp->getLoc(), 
+                    yieldOp->getLoc(),
                     builder.getIntegerType(32),  // i32类型
                     bufferPtrs[0]  // 假设ssb_ptr已在作用域中定义
                 );
@@ -965,8 +1761,16 @@ SmallVector<Value> addBufValLoop(scf::ForOp forOp, DenseMap<Value, int> VecBitMa
     return if_conditions;
 }
 
-void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Operation*>& opsToErase, DenseMap<scf::IfOp, Value>& ifArgMap, OpBuilder &builder, ModuleOp moduleOp)
+void ReplaceIf(scf::ForOp forOp, DenseMap<scf::ForOp, SmallVector<int>> cntArgs, DenseMap<scf::ForOp, SmallVector<int>> innerScopeBufferControlArgs,
+               SmallVector<Value> conditions, SmallVector<Operation*>& opsToErase, DenseMap<scf::IfOp, Value>& ifArgMap, OpBuilder &builder, ModuleOp moduleOp)
 {
+    // 维护一个全局的核内buffer控制变量的vector，他随着if的修改更改
+    SmallVector<Value> innerBufCtrlValue;
+    for (int idx : innerScopeBufferControlArgs[forOp]) {
+      llvm::outs() << "idx: " << idx << "\n";
+      innerBufCtrlValue.push_back(forOp.getRegionIterArg(idx));
+    }
+
     SmallVector<scf::IfOp> ifToProcess;
     llvm::outs()<<"enter replaceif\n";
     Value step = forOp.getStep();
@@ -981,10 +1785,26 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
     });
 
     IRMapping IRMap;
+    SmallVector<Block*> skipedIfBlock;
     for (int i = 0; i < ifToProcess.size(); i++) {
         auto ifOp = ifToProcess[i];
         auto parentOp = ifOp->getParentOp();
         auto loc = ifOp.getLoc();
+
+        // 获取当前if所使用到的 innerBuf 控制变量
+        SmallVector<Value> curIfCtrlValues;
+        SmallVector<Value> curIfCtrlValueResults;
+        for (auto &op : ifOp.getThenRegion().front()) {
+          for (Value operand : op.getOperands()) {
+            if (llvm::is_contained(innerBufCtrlValue, operand)) {
+              llvm::outs() << "op contained IF: " << op << "\n";
+              llvm::outs() << "operand: " << operand << "\n";
+              curIfCtrlValues.push_back(operand);
+              curIfCtrlValueResults.push_back(op.getResult(0));
+            }
+          }
+        }
+
         // 获取for循环的iterargs（迭代参数）
         auto iterArgs = forOp.getRegionIterArgs();
         if (iterArgs.size() < conditions.size()) {
@@ -1011,18 +1831,27 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
                 elseResults.push_back(result);
             }
         }
+
+        // 这里只是为 if result 提供一个 type
+        SmallVector<int> ctrlValueResultIdxs;
+        for (int i = 0; i < curIfCtrlValues.size(); i++) {
+        thenResults.push_back(curIfCtrlValues[i]);
+        elseResults.push_back(curIfCtrlValues[i]);
+        ctrlValueResultIdxs.push_back(thenResults.size() - 1);
+        }
+
         // 获取最后两个迭代参数
-        Value iterArgMinus = iterArgs[iterArgs.size() - (conditions.size() - i)];
+        Value iterArgMinus = iterArgs[cntArgs[forOp][i]];
         // 创建新的then区域，返回两个迭代参数
         thenResults.push_back(iterArgMinus);
         elseResults.push_back(iterArgMinus);
-        
+
         // 保存原有的操作，以便后续克隆
         SmallVector<Operation*> thenOps;
         for (auto &op : ifOp.getThenRegion().front()) {
             thenOps.push_back(&op);
         }
-        
+
         SmallVector<Operation*> elseOps;
         if (!ifOp.getElseRegion().empty()) {
             for (auto &op : ifOp.getElseRegion().front()) {
@@ -1044,7 +1873,7 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
         // 处理then区域
         auto &newThenBlock = newIfOp.getThenRegion().front();
         builder.setInsertionPointToStart(&newThenBlock);
-        
+
         // 克隆then区域的操作
         for (auto op : thenOps) {
             if (auto yieldOp = dyn_cast<scf::YieldOp>(op)) {
@@ -1055,21 +1884,34 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
                 }
                 // 获取最后两个迭代参数
                 Value iterArgMinus = iterArgs[iterArgs.size() - (conditions.size() - i)];
-        
+
                 // %ssb_addr = arith.addi %ssb_addr_offset, %c32_i64 : i64
                 auto AddIOp = builder.create<mlir::arith::AddIOp>(
                     forOp->getLoc(),
                     iterArgMinus,
                     step);
+
+                // 在if中 yield 出来 if 中对相关的控制变量的修改值
+                for (auto v : curIfCtrlValueResults) {
+                  mappedOperands.push_back(v);
+                }
                 // 这里加个add1
                 mappedOperands.push_back(AddIOp);
                 builder.create<scf::YieldOp>(loc, mappedOperands);
             } else {
                 auto newOp = builder.clone(*op, IRMap);
                 IRMap.map(op->getResults(), newOp->getResults());
+
+                for (auto [ind, v] : llvm::enumerate(op->getResults())) {
+                  if (llvm::is_contained(curIfCtrlValueResults, v)) {
+                    auto iter = llvm::find(curIfCtrlValueResults, v);
+                    int index = std::distance(curIfCtrlValueResults.begin(), iter);
+                    curIfCtrlValueResults[index] = newOp->getResult(ind);
+                  }
+                }
             }
         }
-        
+
         // 处理else区域
         auto &newElseBlock = newIfOp.getElseRegion().front();
         builder.setInsertionPointToStart(&newElseBlock);
@@ -1082,7 +1924,10 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
                   for (auto operand : yieldOp->getOperands()) {
                       mappedOperands.push_back(IRMap.lookupOrDefault(operand));
                   }
-                  Value iterArgMinus = iterArgs[iterArgs.size() - (conditions.size() - i)];
+                  // else 返回控制变量的原值
+                  for (auto v : curIfCtrlValues) {
+                    mappedOperands.push_back(v);
+                  }
                   mappedOperands.push_back(iterArgMinus);
                   builder.create<scf::YieldOp>(loc, mappedOperands);
               } else {
@@ -1092,10 +1937,14 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
           }
         } else {
           SmallVector<Value> cntOperands;
+          // else 返回控制变量的原值
+          for (auto v : curIfCtrlValues) {
+            cntOperands.push_back(v);
+          }
           cntOperands.push_back(iterArgMinus);
           builder.create<scf::YieldOp>(loc, cntOperands);
         }
-            
+
         // 替换原有if操作的使用
         // 首先，将原if操作的结果替换为新if操作的对应结果
         for (unsigned j = 0; j < ifOp.getNumResults(); ++j) {
@@ -1117,14 +1966,71 @@ void ReplaceIf(scf::ForOp forOp, SmallVector<Value> conditions, SmallVector<Oper
             for (unsigned j = 0; j < op->getNumOperands(); ++j) {
                 for (auto argIndex = 0; argIndex < conditions.size(); argIndex ++) {
                     // 获取最后两个迭代参数
-                    Value iterArgMinus = iterArgs[iterArgs.size() - (conditions.size() - i)];
                     if (op->getOperand(j) == iterArgMinus) {
                         op->setOperand(j, newIfOp.getResults()[newIfOp.getNumResults() - 1]);
                     }
                 }
             }
         });
-        
+
+        // 将后续使用到控制变量的 op 操作数均替换为 newif result
+        Block* forBlock = newIfOp->getBlock();
+        // 由于没有立刻删除旧的 ifOp，会导致其中的op在向上查询parent时出问题，
+        // 故显式的指定遍历 for 循环时，哪些 if 需要跳过
+        skipedIfBlock.push_back(&(newIfOp.getThenRegion().front()));
+        skipedIfBlock.push_back(&(newIfOp.getElseRegion().front()));
+        skipedIfBlock.push_back(&(ifOp.getThenRegion().front()));
+        if (!ifOp.getElseRegion().empty()) {
+          skipedIfBlock.push_back(&(ifOp.getElseRegion().front()));
+        }
+
+        forOp.getBody()->walk([&](Operation* op) {
+          // 找到 op 所属的 ifop 或者 op在 for block 中
+          Block* opBlock = op->getBlock();
+          Operation* parentOp = op;
+          // llvm::outs() <<  "parentOp: " << *parentOp << "\n";
+          while (opBlock != forBlock) {
+            // 当前op在 newIfOp block 块中，跳过
+            if (llvm::is_contained(skipedIfBlock, opBlock)) {
+            // if ((opBlock == ifBLock) || (opBlock == oldIfBLock)) {
+              return;
+            }
+            opBlock = parentOp->getParentOp()->getBlock();
+            parentOp = parentOp->getParentOp();
+            // llvm::outs() <<  "parentOp: " << *parentOp << "\n";
+          }
+
+          // 只处理if操作之后的use
+          if (parentOp->isBeforeInBlock(newIfOp)) {
+            return;
+          }
+
+          for (auto [j, operand] : llvm::enumerate(op->getOperands())) {
+            for (auto ctrlValue : curIfCtrlValues) {
+              if (llvm::is_contained(curIfCtrlValues, operand)) {
+                auto iter = llvm::find(curIfCtrlValues, operand);
+                int index = std::distance(curIfCtrlValues.begin(), iter);
+
+                op->setOperand(j, newIfOp.getResults()[ctrlValueResultIdxs[index]]);
+              }
+            }
+          }
+        });
+
+        // 更新全局的 innerBufCtrlValue 中的控制变量值
+        for (auto [j, v] : llvm::enumerate(curIfCtrlValues)) {
+          auto iter = llvm::find(innerBufCtrlValue, v);
+          int index = std::distance(innerBufCtrlValue.begin(), iter);
+          innerBufCtrlValue[index] = newIfOp.getResults()[ctrlValueResultIdxs[j]];
+        }
+        // 给对应的if result 打标记，防止后续double buffer将其标记为依赖变量
+        SmallVector<Attribute> attrs;
+        for (auto index : ctrlValueResultIdxs) {
+          // attrs.push_back((mlir::IntegerAttr::get(mlir::IndexType::get(ifOp.getContext()), index)));
+          attrs.push_back(builder.getI32IntegerAttr(index));
+        }
+        newIfOp->setAttr("controlValues", mlir::ArrayAttr::get(ifOp.getContext(), attrs));
+
           // // 删除原有的if操作
           opsToErase.push_back(ifOp);
           if (ifArgMap.find(newIfOp) == ifArgMap.end()) {
@@ -1249,7 +2155,7 @@ void FlowSssbuf(ModuleOp module) {
                     }
                 }
             });
-            
+
             if (hasSyncBlockSet) {
                 if (llvm::find(targetLoops, forOp) == targetLoops.end()) {
                     targetLoops.push_back(forOp);
@@ -1260,9 +2166,11 @@ void FlowSssbuf(ModuleOp module) {
     llvm::outs()<<"enter flowsssbuf\n\n";
 
     SmallVector<scf::ForOp> transformLoops;
+    DenseMap<scf::ForOp, SmallVector<int>> cntArgs;
+    DenseMap<scf::ForOp, SmallVector<int>> innerScopeBufferControlArgs;
     // 转换每个目标循环
     for (scf::ForOp forOp : targetLoops) {
-      auto newforOp = transformLoop(forOp, builder);
+      auto newforOp = transformLoop(forOp, builder, cntArgs, innerScopeBufferControlArgs);
     }
 
     module.walk([&](Operation* op) {
@@ -1278,19 +2186,32 @@ void FlowSssbuf(ModuleOp module) {
                     }
                 }
             });
-            
+
             if (hasSyncBlockSet) {
                 if (llvm::find(transformLoops, forOp) == transformLoops.end()) {
                     transformLoops.push_back(forOp);
                 }
             }
         }
-      
+
     });
 
     llvm::sort(transformLoops, [](scf::ForOp a, scf::ForOp b) {
         return getNestingDepth(a) > getNestingDepth(b);
     });
+
+    // 先遍历mlir，找到alloc，即为核间buffer
+    SmallVector<Value> crossScopeBuffer = findCrossScopeBuffer(module);
+    // 目前默认核间buffer num = 1
+    SmallVector<int> crossScopeBufferNum;
+    for (int i = 0; i < crossScopeBuffer.size(); i++) {
+      crossScopeBufferNum.push_back(1);
+    }
+
+    int bufAddrOffset = 4;
+    int vecAddrOffset = 1024;
+    addSSBufferInit(module, crossScopeBuffer, bufAddrOffset, vecAddrOffset);
+
     DenseMap<Value, int> VecBitMap;
     DenseMap<Value, int> CubeBitMap;
     getAllocBit(module, VecBitMap, CubeBitMap, builder);
@@ -1298,10 +2219,26 @@ void FlowSssbuf(ModuleOp module) {
     printDenseMap(VecBitMap);
     SmallVector<Operation*> opsToErase;
     for (scf::ForOp forOp : transformLoops) {
+        // 核间buffer由于会经常被更改，维护全局buffer列表容易产生野指针，每次寻找单个for循环内的
+        DenseMap<scf::IfOp, SmallVector<Value>> ifResultDeps;
+        ifResultDeps.clear();
+        auto innerScopeBuffer = findInnerScopeBuffer(forOp, ifResultDeps);
+
+        // 默认核内buffer的buffer num = 2
+        int bufferNum = 2;
+        SmallVector<int> innerScopeBufferNum;
+        for (int i = 0; i < innerScopeBuffer.size(); i++) {
+          innerScopeBufferNum.push_back(bufferNum);
+        }
+
         DenseMap<scf::IfOp, Value> ifArgMap;
         llvm::outs()<<"before replaceif\n";
-        auto bufvals = addBufValLoop(forOp, VecBitMap, CubeBitMap, builder);
-        ReplaceIf(forOp, bufvals, opsToErase, ifArgMap, builder, module);
+
+        auto bufvals = addBufValLoopV2(forOp, builder, module, cntArgs, innerScopeBufferControlArgs,
+ 	                                     crossScopeBuffer, crossScopeBufferNum, innerScopeBuffer, innerScopeBufferNum);
+        llvm::outs()<<"bufvals: " << bufvals.size() << "\n";
+        ReplaceIf(forOp, cntArgs, innerScopeBufferControlArgs, bufvals, opsToErase, ifArgMap, builder, module);
+
         llvm::outs()<<"after replaceif\n";
         for (const auto& pair : ifArgMap) {
           auto val = pair.first;
@@ -1316,7 +2253,7 @@ void FlowSssbuf(ModuleOp module) {
       op->erase();
     }
 
-    
+
 }
 
 bool isTransOp(mlir::Operation *op) {
@@ -1376,12 +2313,12 @@ void FindAndMarkBuffer(ModuleOp module) {
       op->setAttr("Set Flag", builder.getI32IntegerAttr(1));
 
       for (Operation *consumerOp : SharedBuffer.getUsers()) {
-        if (consumerOp == op) 
+        if (consumerOp == op)
           continue;
         if (!consumerOp) continue;
-        
+
         llvm::outs() << "consumerOp: " << *consumerOp << "\n";
-        
+
         consumerOp->setAttr("Buffer idx", builder.getI32IntegerAttr(BufferIdx));
         consumerOp->setAttr("Wait Flag", builder.getI32IntegerAttr(0));
       }
@@ -1574,7 +2511,7 @@ static void ComputeYieldForMergedRegionV3(MergedRegion &mr) {
 static void CollectAllNestedOps(Operation *op, DenseSet<Operation *> &regionOps) {
     if (!op)
         return;
-    
+
     if (regionOps.contains(op))
         return; // 已经收集过
 
@@ -1775,7 +2712,7 @@ SmallVector<Operation *> collectDepValuesCalculation(DenseSet<Operation *> forRe
   DenseSet<Operation *> collectOps;
   std::deque<Operation *> opStack;
   bool flag = false;
-  
+
   opStack.push_back(op);
   while (opStack.size()) {
     Operation *curOp = opStack.front();
@@ -1884,7 +2821,7 @@ void copyLoadCalculation(scf::ForOp forOp, SmallVector<Value> dependValues, Smal
   for (Operation &op : forOp.getBody()->without_terminator()) {
       CollectAllNestedOps(&op, forRegionOps);
   }
-  
+
   for (MergedRegion &mr : mergedRegions) {
     DenseSet<Operation *> regionOps;
     for (Operation *op : mr.opsToMove) {
@@ -1892,7 +2829,7 @@ void copyLoadCalculation(scf::ForOp forOp, SmallVector<Value> dependValues, Smal
     }
 
     for (Operation *op : regionOps) {
-      if (isa<triton::StoreOp>(op) || isa<triton::LoadOp>(op)) {
+      if (isa<triton::StoreOp>(op) || isa<triton::LoadOp>(op) || isa<triton::AddPtrOp>(op)) {
         // recusively check that whether load/store op's operands originated from if results
         DenseMap<Value, std::pair<Value, SmallVector<Operation*>>> collectDepValueMap;
         SmallVector<Operation *> collectOps = \
@@ -2011,7 +2948,7 @@ void ExpandMergedRegionOpsForAIC(scf::ForOp forOp,
 
     while (!worklist.empty()) {
       Operation *op = worklist.pop_back_val();
-      
+
       // 往前吸收operand
       for (Value operand : op->getOperands()) {
         // BlockArgument
@@ -3093,7 +4030,7 @@ static void MoveIndependentOpsIntoRegionBackwardV2(
     }
   }
 
-  // ----------- 统一应用移动 ----------- 
+  // ----------- 统一应用移动 -----------
   for (auto &it : movePlan) {
       Operation *op = it.first;
       int targetRegionIdx = it.second;
@@ -3300,7 +4237,7 @@ static void CopyOpsToAfterwardRegions(
         if (yieldDefOps.contains(op)) {
           cloneAndOriYieldMap[cloned] = op;
         }
-        
+
         // 记录copy的for op
         if (auto forOp = dyn_cast<scf::ForOp>(cloned)) {
           copiedForOps.push_back(forOp);
@@ -3440,7 +4377,7 @@ void ExpandMergedRegionOps(scf::ForOp forOp,
   auto scopeOp = forOp->getParentOfType<scope::ScopeOp>();
   if (!scopeOp)
     return;
-  
+
   auto coreTypeAttr = scopeOp->getAttrOfType<hivm::TCoreTypeAttr>(
           hivm::TCoreTypeAttr::name);
 
@@ -3471,7 +4408,7 @@ void ExpandMergedRegionOps(scf::ForOp forOp,
     // 用Map记录原始的for yield op的<op, yield value>的映射
     DenseMap<Value, Operation *> yieldMap;
     GetYieldMap(forOp, yieldMap);
-    
+
     llvm::outs()<<"YieldMap:\n";
     for(auto it: yieldMap) {
       llvm::outs()<<*(it.second)<<"\n";
@@ -3479,7 +4416,7 @@ void ExpandMergedRegionOps(scf::ForOp forOp,
 
     // 2 greedy 扩展, yield value后续处理
     ExpandMergedRegionOpsGreedyV2ForAIC(forOp, mergedRegions);
-    
+
     // 复制当前region的除tt.dot、以及[wait - set]之间的op到后续的所有MergedRegion
     // 倒序实现
     // 记录clone和original的yield对应op的map
@@ -3591,7 +4528,7 @@ void GetBlockInfos(SmallVector<WaitSetRegion> &regions, Block &body) {
         hasCopyOrFixpipe = true;
       }
     }
-    
+
     it = endIt++;
     regions.push_back({waitOp, lastSetOp, opsInRegion, hasCopyOrFixpipe});
   }
@@ -3886,7 +4823,7 @@ void AddArgsForDependValues (scf::ForOp forOp, SmallVector<Value> &dependValues,
 
   // 更新 mergedRegions 中的 op 为新的for循环的 op
   UpdateMergedRegionsWithNewForOp(mergedRegions, mapper);
-  
+
   // 创建新的循环 yield 操作：原操作数 + dependValues
   auto oldYield = cast<scf::YieldOp>(newBlock.getTerminator());
   SmallVector<Value> newYieldOps(oldYield.getOperands());
@@ -3924,7 +4861,7 @@ void ComputeElseYieldValuesV2 (MergedRegion mergedRegion, SmallVector<Value> &el
   }
   auto iterArgs = forOp.getRegionIterArgs();
   auto forYieldValues = forOp.getYieldedValues();
-  
+
   // 新增的与 dependvalue 相关的 initarg 是接在原本for循环args后面，数量与dependvalue数量相等
   int baseDependIdx = iterArgs.size() - dependValues.size();
 
@@ -4092,7 +5029,7 @@ void CreateIfOpsOrigin (SmallVector<MergedRegion> &mergedRegions) {
     Location loc = insertPt->getLoc();
     Value cond = builder.create<arith::ConstantOp>(
         loc, builder.getI1Type(), builder.getBoolAttr(true));
- 
+
     bool needsYield = !region.yieldValues.empty();
     scf::IfOp ifOp;
     if (needsYield)
@@ -4102,19 +5039,19 @@ void CreateIfOpsOrigin (SmallVector<MergedRegion> &mergedRegions) {
 
     // 加标记
     ifOp->setAttr("ssbuffer", builder.getUnitAttr());
-    
+
     // 将op移进then块
     Block &thenBlock = ifOp.getThenRegion().front();
     for (Operation *m : llvm::reverse(region.opsToMove)) {
       m->moveBefore(&thenBlock, thenBlock.begin());
     }
- 
+
     // 创建 then/else yield
     if (needsYield) {
       OpBuilder thenBuilder(builder.getContext());
       thenBuilder.setInsertionPointToEnd(&thenBlock);
       thenBuilder.create<scf::YieldOp>(loc, region.yieldValues);
- 
+
       // else block
       SmallVector<Value> elseYieldValues;
       int idx = 0;
@@ -4126,17 +5063,17 @@ void CreateIfOpsOrigin (SmallVector<MergedRegion> &mergedRegions) {
       Block &elseBlock = ifOp.getElseRegion().front();
       OpBuilder elseBuilder(&elseBlock, elseBlock.end());
       elseBuilder.create<scf::YieldOp>(loc, elseYieldValues);
- 
+
       // 替换外部使用
       Block *block = ifOp->getBlock();
       auto ifIt = Block::iterator(ifOp);
- 
+
       for (size_t i = 0; i < region.yieldValues.size(); ++i) {
         Value oldVal = region.yieldValues[i];
         Value newVal = ifOp.getResult(i);
- 
+
         SmallVector<OpOperand *> usesToReplace;
- 
+
         for (OpOperand &use : llvm::make_early_inc_range(oldVal.getUses())) {
           Operation *user = use.getOwner();
           // 同一个 block, user 必须在 ifOp 之后, 不能在 ifOp 内部（then / else）
@@ -4144,13 +5081,13 @@ void CreateIfOpsOrigin (SmallVector<MergedRegion> &mergedRegions) {
             continue;
           usesToReplace.push_back(&use);
         }
- 
+
         for (OpOperand *use : usesToReplace)
           use->set(newVal);
       }
- 
+
     }
- 
+
     llvm::outs() <<"Create ifOp: "<< *ifOp << "\n";
   }
 }
@@ -4177,7 +5114,7 @@ void AddIfCondition(ModuleOp module) {
 
     // 处理forop的末尾对于iter_arg的自增操作, 如tt.advance, 移进对应的if op
     MoveIterArgUsersIntoIf(forOp, mergedRegions);
-    
+
     // 获取if yield的value, 并更新if内op的user为yield value
     for (MergedRegion &mr : mergedRegions) {
       // ComputeYieldForMergedRegion(mr, body);
@@ -4241,7 +5178,7 @@ void AddIfCondition(ModuleOp module) {
 
     if (dependValues.size() != 0) {
       copyLoadCalculation(oldForOp, dependValues, newMergedRegions);
-      
+
       // repeat previous operations
       for (MergedRegion &mr : newMergedRegions) {
         mr.yieldValues.clear();
@@ -4250,12 +5187,12 @@ void AddIfCondition(ModuleOp module) {
       }
       FindDependValues(dependValues, newMergedRegions);
     }
-    
+
     // 如果存在VV或CC依赖，更新ForOp添加新的对应args
     if (dependValues.size() != 0) {
       AddArgsForDependValues(oldForOp, dependValues, newMergedRegions, module);
     }
-    
+
     // 创建最终的if op
     llvm::outs() << "before create if ops" << '\n';
     CreateIfOps(newMergedRegions, dependValues);
@@ -4298,7 +5235,7 @@ void ChangeAdvanceOpForm(ModuleOp module) {
           break;
         }
       }
-      
+
       if (advanceIdx == -1) continue;
 
       // 删除 advance
@@ -4310,7 +5247,7 @@ void ChangeAdvanceOpForm(ModuleOp module) {
 
       thenYield->setOperands(thenOps);
       elseYield->setOperands(elseOps);
-      
+
       // 重建 ifOp（去掉 advance 对应的 result）
       OpBuilder ifBuilder(ifOp);
       ifBuilder.setInsertionPoint(ifOp);
@@ -4377,7 +5314,7 @@ void processRedudantIf(ModuleOp module) {
         if (initArgs.size() == 5)
         {
             forOps.push_back(forOp);
-        }  
+        }
     });
 
     for (auto forOp : forOps) {
@@ -4468,7 +5405,7 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
             return nullptr;
         }
         scf::IfOp targetIfOp = dyn_cast<scf::IfOp>(ifOp);
-        
+
         // 确认当前Value是scf.if的第几个返回值
         int64_t depValueIdx = -1;
         for (auto [idx, result] : llvm::enumerate(targetIfOp.getResults())) {
@@ -4495,7 +5432,7 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
     }
 
     llvm::outs() << "oldFor: " << forOp << '\n';
-    
+
     // 获取原始循环的信息
     Value originalLowerBound = forOp.getLowerBound();
     Value originalUpperBound = forOp.getUpperBound();
@@ -4530,7 +5467,7 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
         for (int i = 0; i < bufferNum - 1; i++) {
             iterArgs.push_back(originalInitArgs[idx]);
         }
-        
+
         // 在迭代参数中添加计数器
         for (int i = 0; i < 2; i++) {
             iterArgs.push_back(counterInit);
@@ -4545,20 +5482,20 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
         originalUpperBound,
         originalStep,
         iterArgs);
-    
+
     // 设置IR映射表，将旧循环的变量映射到新循环
     IRMapping mapper;
-    
+
     // 映射迭代变量
     mapper.map(forOp.getInductionVar(), newForOp.getInductionVar());
-    
+
     // 映射迭代参数
-    for (auto [oldArg, newArg] : 
-         llvm::zip(forOp.getRegionIterArgs(), 
+    for (auto [oldArg, newArg] :
+         llvm::zip(forOp.getRegionIterArgs(),
                   newForOp.getRegionIterArgs())) {
         mapper.map(oldArg, newArg);
     }
-    
+
     SmallVector<Value> newArgs;
     for (int i = forOp.getRegionIterArgs().size(); i < newForOp.getRegionIterArgs().size(); i++) {
         newArgs.push_back(newForOp.getRegionIterArgs()[i]);
@@ -4566,11 +5503,11 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
     // 克隆循环体内容到新循环
     auto &newLoopBody = *newForOp.getBody();
     builder.setInsertionPointToStart(&newLoopBody);
-    
+
     for (auto &op : forOp.getBody()->without_terminator()) {
         builder.clone(op, mapper);
     }
-    
+
     // 克隆yield操作
     if (auto yieldOp = dyn_cast<scf::YieldOp>(yields)) {
         SmallVector<Value> newYieldOperands;
@@ -4578,12 +5515,12 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
             newYieldOperands.push_back(mapper.lookupOrDefault(operand));
         }
         // 将新增的迭代参数添加到yield操作数中
-        for (auto currentCounter : newArgs) {                
+        for (auto currentCounter : newArgs) {
             newYieldOperands.push_back(currentCounter);
         }
         builder.create<scf::YieldOp>(yieldOp.getLoc(), newYieldOperands);
     }
-    
+
     // 替换原循环的结果
     unsigned numOriginalResults = forOp.getNumResults();
     SmallVector<Value> originalResults;
@@ -4591,7 +5528,7 @@ scf::ForOp addDoubleBuffForArgs(ModuleOp module, SmallVector<Value> uniqueDeps, 
         originalResults.push_back(newForOp.getResult(i));
     }
     forOp.replaceAllUsesWith(originalResults);
-    
+
     // 8. 删除原循环
     forOp.erase();
 
@@ -5283,7 +6220,7 @@ void addMultiBuffCaculate(ModuleOp module, SmallVector<Value> newUniqueDeps,
     }
   }
 
-  
+
   llvm::outs() << "multibuffer end!\n";
 }
 
@@ -5408,25 +6345,35 @@ SmallVector<Value> collectIfInfo(
     return WalkResult::advance();
   });
   llvm::outs()<<"ifOps:"<<ifOps.size()<<"\n";
-  
+
   int miniDepNum = 2;
   if (ifOps.size() < miniDepNum) {
     return allDeps;
   }
   // Step 2: Process in order
+  SmallVector<Value> controlValues;
   for (auto ifOp : ifOps) {
+    if (ifOp->hasAttr("controlValues")) {
+      llvm::outs() << "Get controlValues\n\n";
+      auto arrAttr = ifOp->getAttrOfType<mlir::ArrayAttr>("controlValues");
+      for (auto attr : arrAttr) {
+        int idx = dyn_cast<mlir::IntegerAttr>(attr).getInt();
+        controlValues.push_back(ifOp.getResult(idx));
+      }
+    }
+
     llvm::outs()<<"ifOp->getOperands():"<<ifOp->getOperands().size()<<"\n";
     SmallVector<Value> deps;
     if (producedValues.empty()) {
       llvm::outs()<<"producedValues为空!"<<"\n";
     }
-    
+
     // inputs
     Region &thenRegion = ifOp.getThenRegion();
     for (Operation &op : thenRegion.front()) {
       for (Value operand : op.getOperands()) {
         for (Value v : producedValues) {
-          if (operand == v && !llvm::is_contained(deps, operand)) {
+          if ((!llvm::is_contained(controlValues, operand)) && (operand == v)) {
             deps.push_back(operand);
           }
         }
@@ -5516,6 +6463,7 @@ void DAGSSBufferPass::runOnOperation() {
   AddIfCondition(module);
 
   FlowSssbuf(module);
+  llvm::outs() << module << "  after flowsssbuf zxg\n\n";
   ControlSsbufV2(module);
 
   // advance不能出现在if里, 规避处理

@@ -348,6 +348,9 @@ void init_triton_ascend_passes_ttir(py::module &&m) {
  	   
   m.def("add_dag_ssbuffer", [](mlir::PassManager &pm) {
     pm.addPass(mlir::triton::createDAGSSBufferPass());});
+
+  m.def("add_if_controls", [](mlir::PassManager &pm) {
+    pm.addPass(mlir::triton::createAddIfControlsPass());});
 }
 
 // Forward declaration for ascend_ir bindings (defined in ascend_ir.cc)

@@ -457,7 +457,7 @@ void processOperationToMove(const OpMoveInfo& info,
       } else {
         llvm::outs()<<"Can't find block by index\n";
       }
-      
+
     }
   }
 
@@ -624,7 +624,7 @@ void processOperationToMove(const OpMoveInfo& info,
       } else {
         llvm::outs()<<"Can't find block by index\n";
       }
-      
+
     }
   }
 }
@@ -807,7 +807,7 @@ static void SplitScope(triton::FuncOp funcOp, AffinityDAG::Graph& graph, Operati
  	 static Operation *findInsertionPointAfterWaitForAIV(Operation *waitOp) {
  	   Block *block = waitOp->getBlock();
       auto it = ++waitOp->getIterator();
-      
+
       for (; it != block->end(); ++it) {
         if (isa<bufferization::ToMemrefOp>(*it) || isa<scf::YieldOp>(*it)) {
           break;
@@ -853,11 +853,11 @@ static void SplitScope(triton::FuncOp funcOp, AffinityDAG::Graph& graph, Operati
 
       // 获取 FixpipeOp 的迭代器
       auto it = ++fixpipeOperation->getIterator();
-      
+
       // 遍历后续操作直到找到 sync_block_set
       while (it != fixpipeOperation->getBlock()->end()) {
           mlir::Operation &op = *it++;
-          
+
           if (op.getName().getStringRef() == "hivm.hir.sync_block_set") {
               auto staticFlagAttr = op.getAttrOfType<mlir::IntegerAttr>("static_flag_id");
               return staticFlagAttr.getInt();
@@ -883,7 +883,7 @@ static void SplitScope(triton::FuncOp funcOp, AffinityDAG::Graph& graph, Operati
 
 
       for (auto fixpipeOp : fixpipes) {
-      
+
       auto newflag = findFixPipeFlagSafe(fixpipeOp);
         // 1. 在 FixpipeOp 前插 Wait
         builder.setInsertionPoint(fixpipeOp);
@@ -949,11 +949,11 @@ static void SplitScope(triton::FuncOp funcOp, AffinityDAG::Graph& graph, Operati
 
       // 获取 copyOp 的迭代器
       auto it = ++toMemrefOperation->getIterator();
-      
+
       // 遍历后续操作直到找到 sync_block_set
       while (it != toMemrefOperation->getBlock()->end()) {
           mlir::Operation &op = *it++;
-          
+
           if (op.getName().getStringRef() == "hivm.hir.sync_block_set") {
               auto staticFlagAttr = op.getAttrOfType<mlir::IntegerAttr>("static_flag_id");
               return staticFlagAttr.getInt();
