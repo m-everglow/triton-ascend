@@ -93,7 +93,9 @@ namespace {
                      DenseMap<int, SmallVector<Value>> &thenYieldValues,
                      DenseMap<int, SmallVector<Value>> &elseYieldValues);
     void createIfOpsByBlockId(scf::ForOp forOp);
+    void copyOps(ModuleOp module);
     void copyOpsInCube(ModuleOp module);
+    void copyOpsInVector(ModuleOp module);
     void addBlockCounters(ModuleOp module);
     void addInnerDepConds(ModuleOp module);
     void insertInterCorePipeSForCube(ModuleOp module);
@@ -342,6 +344,21 @@ void collectDependencyClosure(Operation *op,
   }
 }
 
+void collectDependencyClosureUnfiltered(Operation *op,
+                              DenseSet<Operation *> &closure,
+                              DenseSet<Operation *> &scopeOps) {
+  if (!op || closure.contains(op) || !scopeOps.contains(op))
+    return;
+
+  closure.insert(op);
+
+  for (Value operand : op->getOperands()) {
+    if (Operation *def = operand.getDefiningOp()) {
+      collectDependencyClosureUnfiltered(def, closure, scopeOps);
+    }
+  }
+}
+
 void stableTopoSort(DenseSet<Operation *> &ops,
                     DenseMap<Operation*, int> &opOrder,
                     SmallVectorImpl<Operation *> &sorted) {
@@ -489,6 +506,11 @@ void AddIfControlsPass::copyOpsInCube(ModuleOp module) {
           cloned->setAttr("ssbuffer.block_id",
                           builder.getI32IntegerAttr(id));
 
+          // Set ssbuffer.clone = original block_id
+          if (auto origBlockIdAttr = depOp->getAttrOfType<IntegerAttr>("ssbuffer.block_id")) {
+            cloned->setAttr("ssbuffer.clone", origBlockIdAttr);
+          }
+
           mapper.map(depOp, cloned);
         }
 
@@ -505,10 +527,157 @@ void AddIfControlsPass::copyOpsInCube(ModuleOp module) {
   });
 }
 
+void AddIfControlsPass::copyOpsInVector(ModuleOp module) {
+  module.walk([&](scope::ScopeOp scopeOp) {
+
+    auto attr = scopeOp->getAttrOfType<hivm::TCoreTypeAttr>("hivm.tcore_type");
+    if (!attr || attr != hivm::TCoreTypeAttr::get(module.getContext(),
+                                                  hivm::TCoreType::VECTOR))
+      return;
+
+    scopeOp.walk([&](scf::ForOp forOp) {
+
+      if (!forOp->hasAttr("ssbuffer.main_loop"))
+        return;
+
+      DenseSet<Operation *> scopeOps;
+      for (Operation &op : forOp.getBody()->without_terminator())
+        collectAllNestedOps(&op, scopeOps);
+      
+
+      DenseMap<int, SmallVector<Operation *>> blockOps;
+      collectOpsByBlockId(forOp, blockOps);
+
+      // Collect all ops with ssbuffer.dep_mark, grouped by dep_mark value
+      DenseMap<int, SmallVector<Operation *>> depMarkGroups;
+      for (auto &p : blockOps) {
+        for (Operation *op : p.second) {
+          if (auto depMarkAttr = op->getAttrOfType<IntegerAttr>("ssbuffer.dep_mark")) {
+            int depMark = depMarkAttr.getInt();
+            depMarkGroups[depMark].push_back(op);
+          }
+        }
+      }
+
+      if (depMarkGroups.empty())
+        return;
+
+      DenseMap<Operation*, int> opOrder;
+      int idx = 0;
+      for (Operation &op : *forOp.getBody()) {
+        opOrder[&op] = idx++;
+      }
+
+      // For each dep_mark group, find producer-consumer pairs and clone
+      for (auto &p : depMarkGroups) {
+        auto &groupOps = p.second;
+        if (groupOps.empty())
+          continue;
+
+        // For each op, find if it's used by another op in the same group with different block_id
+        for (Operation *producer : groupOps) {
+          int producerBlockId = producer->getAttrOfType<IntegerAttr>("ssbuffer.block_id").getInt();
+
+          // Find consumers (ops in same group, different block, using producer)
+          for (Operation *consumer : groupOps) {
+            if (consumer == producer)
+              continue;
+
+            int consumerBlockId = consumer->getAttrOfType<IntegerAttr>("ssbuffer.block_id").getInt();
+            if (producerBlockId == consumerBlockId)
+              continue;
+
+            // Check if consumer uses producer (via operand or attribute)
+            bool usesProducer = false;
+            
+            // Check via getUses() - captures all operand usages including offset
+            for (OpOperand &use : producer->getUses()) {
+              if (use.getOwner() == consumer) {
+                usesProducer = true;
+                break;
+              }
+            }
+            
+            if (!usesProducer)
+              continue;
+
+            // Clone producer and its dependency chain to consumer's block
+            DenseSet<Operation *> depClosure;
+            collectDependencyClosureUnfiltered(producer, depClosure, scopeOps);
+
+            // Remove other group ops from closure (keep producer)
+            for (Operation *groupOp : groupOps) {
+              if (groupOp != producer)
+                depClosure.erase(groupOp);
+            }
+
+            if (depClosure.empty())
+              continue;
+
+            // Get consumer's block ops for filtering
+            auto &consumerOpsList = blockOps[consumerBlockId];
+            DenseSet<Operation *> consumerGroupOps;
+            for (Operation *blockOp : consumerOpsList)
+              collectAllNestedOps(blockOp, consumerGroupOps);
+
+            // Filter to only include ops not already in consumer's block
+            DenseSet<Operation *> toClone;
+            for (Operation *depOp : depClosure) {
+              if (!consumerGroupOps.contains(depOp)) {
+                toClone.insert(depOp);
+              }
+            }
+
+            if (toClone.empty())
+              continue;
+
+            SmallVector<Operation*> sortedDeps;
+            stableTopoSort(toClone, opOrder, sortedDeps);
+
+            IRMapping mapper;
+            OpBuilder builder(consumerOpsList.front());
+
+            for (Operation *depOp : sortedDeps) {
+              Operation *cloned = depOp->clone(mapper);
+              builder.insert(cloned);
+
+              // Clone all attributes
+              for (auto &attr : depOp->getAttrs()) {
+                cloned->setAttr(attr.getName(), attr.getValue());
+              }
+              cloned->setAttr("ssbuffer.block_id",
+                              builder.getI32IntegerAttr(consumerBlockId));
+
+              // Set ssbuffer.clone = dep_mark
+              cloned->setAttr("ssbuffer.clone",
+                              builder.getI32IntegerAttr(p.first));
+
+              // Remap cloned op's operands to use cloned values
+              for (OpOperand &operand : cloned->getOpOperands()) {
+                Value oldVal = operand.get();
+                Value newVal = mapper.lookupOrDefault(oldVal);
+                if (newVal != oldVal)
+                  operand.set(newVal);
+              }
+
+              mapper.map(depOp, cloned);
+            }
+
+            // Update consumer's operands to use cloned values
+            for (OpOperand &operand : consumer->getOpOperands()) {
+              Value oldVal = operand.get();
+              Value newVal = mapper.lookupOrDefault(oldVal);
+              if (newVal != oldVal)
+                operand.set(newVal);
+            }
+          }
+        }
+      }
+    });
+  });
+}
+
 void AddIfControlsPass::createIfOps(ModuleOp module) {
-
-  copyOpsInCube(module);
-
   module.walk([&](scf::ForOp forOp) {
     if (forOp->hasAttr("ssbuffer.main_loop")) {
       createIfOpsByBlockId(forOp);
@@ -2946,6 +3115,20 @@ void AddIfControlsPass::updateInputAndInitMap(ModuleOp module) {
   }
 }
 
+void AddIfControlsPass::copyOps(ModuleOp module) {
+    // 检查mainloop的forOp，归属的scopeOp得有VECTOR属性
+  // 收集每一个带有ssbuffer.dep_mark attribute标记的的op
+  // 如果有一条op的operand %1是另一个ssbuffer.block_id不同的op的result，则说明这两个block_id之间有依赖关系，把%1的依赖链的op拷贝到当前block_id中
+  // 复制op的属性，更新block_id，打上ssbuffer.clone = ssbuffer.dep_mark数值的attribute，表示这是一个被clone的op
+  copyOpsInVector(module);
+  llvm::outs()<<"after copyOpsInVector:\n";
+  llvm::outs()<<module<<"\n\n";
+
+  copyOpsInCube(module);
+  llvm::outs()<<"after copyOpsInCube:\n";
+  llvm::outs()<<module<<"\n\n";
+}
+
 void AddIfControlsPass::runOnOperation() {
   ModuleOp module = getOperation();
 
@@ -2954,6 +3137,8 @@ void AddIfControlsPass::runOnOperation() {
   llvm::outs().flush();
 
   initDependentMap(module);
+  
+  copyOps(module);
 
   updateInputAndInitMap(module);
   llvm::outs()<<"after updateInputAndInitMap:\n";
