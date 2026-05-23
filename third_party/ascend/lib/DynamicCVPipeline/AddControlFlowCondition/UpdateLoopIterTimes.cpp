@@ -316,9 +316,26 @@ std::pair<int, int> UpdateLoopIterTimesPass::calculateFactor(scf::ForOp forOp)
   // Index represents execution order (smaller index = earlier execution)
   SmallVector<scf::IfOp> ifOps;
   DenseMap<Operation *, int> ifOpIndex;
-  int ifOpsCount = collectIfOps(forOp, ifOps, ifOpIndex);
+  int index = 1;
+  int ret = 0;
+  forOp.walk([&](Operation* op) {
+    if (op->hasAttr("ssbuffer.if")) {
+      auto ifOp = dyn_cast<scf::IfOp>(op);
+      if (!ifOp) {
+        ret = 1;
+        LDBG("ssbuffer.if attribute is not allocated on ifOp!");
+        return WalkResult::interrupt();
+      }
+      ifOps.push_back(ifOp);
+      ifOpIndex[ifOp.getOperation()] = index++;
+    }
+    return WalkResult::advance();
+  });
+  if (ret == -1) {
+    return {-1, -1};
+  }
 
-  if (ifOpsCount == 0) {
+  if (ifOps.empty()) {
     LDBG("mainloop do not contains ifblocks!");
     return {-1, -1};
   }
@@ -356,7 +373,16 @@ std::pair<int, int> UpdateLoopIterTimesPass::calculateFactor(scf::ForOp forOp)
     llvm::DenseMap<Value, SmallVector<Value>> filteredCrossCoreMap =
         filterCrossCoreMapByForOp(forOp, extendedCrossCoreMap);
 
-    auto [crossRequiredBuffers, crossX] = calculateCrossDepsFactor(forOp, ifOps, ifOpIndex, filteredCrossCoreMap);
+    // for caculating the crossdeps, need to filter ifblocks without sync_wait/sync_set op
+    SmallVector<scf::IfOp> filterIfOps;
+    DenseMap<Operation *, int> filterIfOpIndex;
+    int filterIfOpsCount = collectIfOps(forOp, filterIfOps, filterIfOpIndex);
+    if (filterIfOpsCount == 0) {
+      LDBG("mainloop do not contains filtered ifblocks!");
+      return {-1, -1};
+    }
+
+    auto [crossRequiredBuffers, crossX] = calculateCrossDepsFactor(forOp, filterIfOps, filterIfOpIndex, filteredCrossCoreMap);
     if (crossRequiredBuffers == -1 || crossX == -1) {
       LDBG("calculateCrossDepsFactor failed!");
       return {-1, -1};
@@ -406,6 +432,10 @@ static int getProducerIfOpIndex(SmallVector<Value> &producerBuffers,
       if (isa<hivm::FixpipeOp>(user) || isa<hivm::CopyOp>(user)) {
         producerIfOpIndex = findIfOpIndexInList(user, otherSideIfOps, otherSideIfOpIndexMap);
         if (producerIfOpIndex == -1) {
+          LDBG("user : " << *user);
+          for (auto ifop : otherSideIfOps){
+            LDBG("other side ifop: " << ifop);
+          }
           LDBG("Can not find the producerBuffers in any ifOps of other side mainloop!");
           return -1;
         }
