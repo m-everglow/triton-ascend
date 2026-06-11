@@ -23,9 +23,13 @@
 #ifndef TRITON_ASCEND_ANALYZE_DATAFLOW_H
 #define TRITON_ASCEND_ANALYZE_DATAFLOW_H
 
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
+
+#include <string>
 
 namespace mlir {
 namespace triton {

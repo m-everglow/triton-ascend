@@ -22,10 +22,15 @@
 
 #ifndef ADD_AUTO_SCHEDULING_COMMON_UTILS_H
 #define ADD_AUTO_SCHEDULING_COMMON_UTILS_H
+#include <functional>
 #include <string_view>
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace mlir {
@@ -42,6 +47,7 @@ inline constexpr llvm::StringLiteral kVectorFirst = "ssbuffer.vector_first";
 inline constexpr llvm::StringLiteral kAddFromMatmul = "ssbuffer.add_from_matmul";
 inline constexpr llvm::StringLiteral kMainLoop = "ssbuffer.main_loop";
 inline constexpr llvm::StringLiteral kTcoreType = "hivm.tcore_type";
+inline constexpr llvm::StringLiteral kTightlyCoupledBuffer = "hivm.tightly_coupled_buffer";
 inline constexpr llvm::StringLiteral kIf = "ssbuffer.if";
 inline constexpr llvm::StringLiteral kIntraBuffer = "ssbuffer.intra_buffer";
 inline constexpr llvm::StringLiteral kAnalyzeFlagId = "ssbuffer.analyze_flag_id";
@@ -92,6 +98,35 @@ llvm::LogicalResult verifyOpBlockId(Operation *op);
 int getAvailableBlockId(ModuleOp module);
 void setFallbackAttr(ModuleOp module);
 bool isScfOp(Operation *op);
+
+// Walk up the parent chain from `op` to find the enclosing scope.scope op
+// and return its core type as a string ("VECTOR" / "CUBE"). Returns
+// "UNKNOWN" if no scope.scope with a tcore_type attribute is found.
+std::string getEnclosingScope(Operation *op);
+
+// Returns the iter_arg index of `v` in `forOp` if `v` is one of forOp's
+// region iter_args AND its type is a ranked tensor; otherwise returns -1.
+// Used to detect tensor-typed loop-carried values.
+int getTensorIterArgIndex(Value v, scf::ForOp forOp);
+
+// Resolve a Value to its underlying memref.alloc. When traceCasts is true,
+// walk through memref.memory_space_cast / bufferization.to_tensor /
+// bufferization.to_memref (used on the VECTOR side, which consumes a
+// CUBE-produced buffer through such casts). Bounded to a small depth to
+// guard against pathological cases.
+memref::AllocOp findAlloc(Value v, bool traceCasts);
+
+// Walk every scf::ForOp in `module` marked with `ssbuffer.main_loop` and
+// invoke `callback(forOp, mainloopId)` for each. The callback returns a
+// WalkResult so it can short-circuit the walk when desired.
+//
+// The typed-walk callback (`scf::ForOp` parameter) already filters to forOps,
+// so callers don't need to dyn_cast. The `hasAttr` + `getAttrOfType` checks
+// are pulled into the helper so every site that needs the
+// "main_loop forOp + mainloopId" pair uses the same filter.
+void walkMainLoopForOps(
+    ModuleOp module,
+    const std::function<WalkResult(scf::ForOp forOp, int mainloopId)> &callback);
 
 inline bool isCubeOp(Operation *op)
 {

@@ -16,6 +16,9 @@
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/ViewLikeInterface.h"
 
+#include "bishengir/Dialect/HIVM/IR/HIVM.h"
+#include "bishengir/Dialect/Scope/IR/Scope.h"
+
 #include "ascend/include/DynamicCVPipeline/Common/Utils.h"
 namespace mlir {
 namespace CVPipeline {
@@ -135,6 +138,76 @@ Value getAliasSource(Value value)
         .Case<memref::TransposeOp>([](memref::TransposeOp transOp) { return transOp.getIn(); })
         .Case<tensor::ExtractSliceOp>([](tensor::ExtractSliceOp extOp) { return extOp.getSource(); })
         .Default([](auto) { return nullptr; });
+}
+
+std::string getEnclosingScope(Operation *op)
+{
+  Operation *cur = op;
+  while ((cur = cur->getParentOp())) {
+    if (auto scopeOp = dyn_cast<scope::ScopeOp>(cur)) {
+      auto coreTypeAttr = scopeOp->getAttrOfType<hivm::TCoreTypeAttr>(
+          hivm::TCoreTypeAttr::name);
+      if (!coreTypeAttr) {
+        return "UNKNOWN";
+      }
+      return coreTypeAttr.getTcoretype() == hivm::TCoreType::VECTOR
+                 ? "VECTOR"
+                 : "CUBE";
+    }
+  }
+  return "UNKNOWN";
+}
+
+int getTensorIterArgIndex(Value v, scf::ForOp forOp)
+{
+  for (unsigned i = 0; i < forOp.getNumRegionIterArgs(); ++i) {
+    if (v == forOp.getRegionIterArgs()[i]) {
+      if (isa<RankedTensorType>(forOp.getRegionIterArgs()[i].getType())) {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+memref::AllocOp findAlloc(Value v, bool traceCasts)
+{
+  if (!traceCasts) {
+    return v.getDefiningOp<memref::AllocOp>();
+  }
+  Operation *defOp = v.getDefiningOp();
+  for (int i = 0; i < 16 && defOp; ++i) {
+    if (auto allocOp = dyn_cast<memref::AllocOp>(defOp)) {
+      return allocOp;
+    }
+    if (isa<memref::MemorySpaceCastOp, bufferization::ToTensorOp,
+            bufferization::ToMemrefOp>(defOp)) {
+      if (defOp->getNumOperands() == 0) {
+        return nullptr;
+      }
+      defOp = defOp->getOperand(0).getDefiningOp();
+      continue;
+    }
+    return nullptr;
+  }
+  return nullptr;
+}
+
+void walkMainLoopForOps(
+    ModuleOp module,
+    const std::function<WalkResult(scf::ForOp forOp, int mainloopId)> &callback)
+{
+  module.walk([&](scf::ForOp forOp) -> WalkResult {
+    if (!forOp->hasAttr(CVPipeline::kMainLoop)) {
+      return WalkResult::advance();
+    }
+    auto mainloopIdAttr =
+        forOp->getAttrOfType<IntegerAttr>(CVPipeline::kMainLoop);
+    if (!mainloopIdAttr) {
+      return WalkResult::advance();
+    }
+    return callback(forOp, mainloopIdAttr.getInt());
+  });
 }
 
 } // namespace CVPipeline
