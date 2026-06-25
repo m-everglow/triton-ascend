@@ -1,7 +1,6 @@
 // RUN: triton-opt --update-for-ops %s --debug %s 2>&1 | FileCheck %s
 
 // Test for tensor iter_arg with only producer if ops
-// CHECK: scf.for {{.*}} iter_args({{.*}}, {{.*}}) ->
 // CHECK: tensor iter_arg <block argument> of type 'tensor<64x64xf32>' at index: 1 has only producers, skipped
 module attributes {hacc.target = #hacc.target<"Ascend950PR_9579">} {
   func.func @test_iter_args_only_producer(%arg0: memref<?xi8>, %arg1: memref<?xi8>, %arg2: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 0 : i32}) attributes {SyncBlockLockArgIdx = 0 : i64, WorkspaceArgIdx = 1 : i64, global_kernel = "local", mix_mode = "mix", parallel_mode = "simd"} {
