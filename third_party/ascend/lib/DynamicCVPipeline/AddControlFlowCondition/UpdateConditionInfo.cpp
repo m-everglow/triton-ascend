@@ -815,9 +815,6 @@ int UpdateConditionInfoPass::collectIntraCoreOutputConditions(
 // Build the ifOp variable mapping for the tensor iter_args
 int UpdateConditionInfoPass::buildTensorIterArgIfOpVarMap(scf::ForOp forOp)
 {
-  // Clear any previous data
-  tensorIterArgIfOpVars.clear();
-  
   if (!info->tensorIterArgDepsMap.count(forOp) || !info->tensorIterArgIndicesMap.count(forOp)) {
     LDBG("Skip buildTensorIterArgIfOpVarMap: no tensor iter_args info for this forOp\n");
     return UPDATE_CONDITION_INFO_SUCCESS;
@@ -851,11 +848,11 @@ int UpdateConditionInfoPass::buildTensorIterArgIfOpVarMap(scf::ForOp forOp)
       Value var = forOp.getRegionIterArg(argIndices[i]);
       consumerToVar[consumer] = var;
     }
-    
-    // Add all the variables of the consumers that depend on the producer
-    if (relation.producer) {
+
+    // Add all the variables of the consumers that depend on each producer
+    for (scf::IfOp producer : relation.producers) {
       for (auto &[consumer, var] : consumerToVar) {
-        producerVars[relation.producer].insert(var);
+        producerVars[producer].insert(var);
       }
     }
 
@@ -867,14 +864,14 @@ int UpdateConditionInfoPass::buildTensorIterArgIfOpVarMap(scf::ForOp forOp)
 
   // Convert the temporary data structure to tensorIfOpVarMap
   for (auto &[producer, vars] : producerVars) {
-    auto &ifOpVars = tensorIterArgIfOpVars[producer];
+    auto &ifOpVars = info->tensorIterArgIfOpVars[producer];
     for (Value var : vars) {
       ifOpVars.producerVars.push_back(var);
     }
   }
 
   for (auto &[consumer, vars] : consumerVars) {
-    auto &ifOpVars = tensorIterArgIfOpVars[consumer];
+    auto &ifOpVars = info->tensorIterArgIfOpVars[consumer];
     for (Value var : vars) {
       ifOpVars.consumerVars.push_back(var);
     }
@@ -888,11 +885,11 @@ void UpdateConditionInfoPass::collectTensorIterArgInputConditions(
     SmallVector<Value> &conditions, DenseSet<Value> &usedVarsSet,
     DenseMap<Value, VarUpdateType> &varUpdateTypes)
 {
-  if (!tensorIterArgIfOpVars.count(ifOp)) {
+  if (!info->tensorIterArgIfOpVars.count(ifOp)) {
     return;
   }
 
-  auto &ifOpVars = tensorIterArgIfOpVars[ifOp];
+  auto &ifOpVars = info->tensorIterArgIfOpVars[ifOp];
   for (Value var : ifOpVars.consumerVars) {
     Value varToUse = var;
     auto latestIt = controlVarToLatestValue.find(var);
@@ -915,11 +912,11 @@ void UpdateConditionInfoPass::collectTensorIterArgOutputConditions(
     SmallVector<Value> &conditions, DenseSet<Value> &usedVarsSet,
     DenseMap<Value, VarUpdateType> &varUpdateTypes)
 {
-  if (!tensorIterArgIfOpVars.count(ifOp)) {
+  if (!info->tensorIterArgIfOpVars.count(ifOp)) {
     return;
   }
 
-  auto &ifOpVars = tensorIterArgIfOpVars[ifOp];
+  auto &ifOpVars = info->tensorIterArgIfOpVars[ifOp];
   for (Value var : ifOpVars.producerVars) {
     Value varToUse = var;
     auto latestIt = controlVarToLatestValue.find(var);
@@ -1321,29 +1318,11 @@ int UpdateConditionInfoPass::combineConditions(ModuleOp module, Value crossCoreC
     info->cntArgs[newIfOp] = counter;
   }
 
-  // Update mappings that refer to the old ifOp BEFORE erasing it
   // Update the tensorIterArgIfOpVars mapping
-  if (tensorIterArgIfOpVars.count(ifOp)) {
-    auto ifOpVars = tensorIterArgIfOpVars[ifOp];
-    tensorIterArgIfOpVars.erase(ifOp);
-    tensorIterArgIfOpVars[newIfOp] = ifOpVars;
-  }
-  
-  // Update tensorIterArgDepsMap with new ifOp
-  if (info->tensorIterArgDepsMap.count(forOp)) {
-    auto &depsVec = info->tensorIterArgDepsMap[forOp];
-    for (auto &relation : depsVec) {
-      // Update producer ifOp - use pointer comparison
-      if (relation.producer.getOperation() == ifOp.getOperation()) {
-        relation.producer = newIfOp;
-      }
-      // Update consumer ifOps
-      for (auto &consumerIfOp : relation.consumers) {
-        if (consumerIfOp.getOperation() == ifOp.getOperation()) {
-          consumerIfOp = newIfOp;
-        }
-      }
-    }
+  if (info->tensorIterArgIfOpVars.count(ifOp)) {
+    auto ifOpVars = info->tensorIterArgIfOpVars[ifOp];
+    info->tensorIterArgIfOpVars.erase(ifOp);
+    info->tensorIterArgIfOpVars[newIfOp] = ifOpVars;
   }
 
   updateControlVarToLatestValue(newIfOp, ifOp, hasCounter, counter);
