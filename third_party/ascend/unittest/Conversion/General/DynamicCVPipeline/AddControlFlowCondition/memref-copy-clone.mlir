@@ -138,7 +138,7 @@ module attributes {hacc.target = #hacc.target<"Ascend950PR_9579">} {
         } {ssbuffer.block_id = 3 : i32, ssbuffer.cross_buffer = 1 : i32}
         // CHECK: %[[ALLOC:.*]] = memref.alloc() {ssbuffer.block_id = 4 : i32,
         // CHECK-SAME: ssbuffer.clone = 5 : i32} : memref<32x32xf16>
-        // CHECK: %[[SUBVIEW0:.*]] = memref.subview %reinterpret_cast_20[0, 0] [{{.*}}, {{.*}}] [1, 1]
+        // CHECK: %[[SUBVIEW0:.*]] = memref.subview %{{.*}}[0, 0] [{{.*}}, {{.*}}] [1, 1]
         // CHECK-SAME: {ssbuffer.block_id = 4 : i32, ssbuffer.clone = 3 : i32}
         // CHECK-SAME: : memref<32x32xf16, strided<[256, 1], offset: ?>> to memref<?x?xf16, strided<[256, 1], offset: ?>>
         // CHECK: %[[SUBVIEW1:.*]] = memref.subview %[[ALLOC]]{{.*}} [{{.*}}, {{.*}}] [1, 1]
