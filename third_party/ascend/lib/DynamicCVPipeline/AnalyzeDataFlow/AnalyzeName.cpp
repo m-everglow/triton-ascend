@@ -43,7 +43,6 @@ namespace {
 static constexpr llvm::StringLiteral interceptrFunc[]{
     "pcb06_tc02_c2v2v2c_chain",
     "flash_varlen_fwd_kernel",
-    "_jagged_flash_attention_bwd_basic_kernel",
     "_sparse_decode_kernel",
     "_sparse_decode_model1_kernel",
     "sparse_flash_attention_grad_kernel",
