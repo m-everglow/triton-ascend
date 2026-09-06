@@ -40,7 +40,6 @@ static const llvm::SmallVector<llvm::StringRef> kBlacklistFuncNames = {
     "sdf02_tc01_c2v_war",
     "sdf02_tc02_c2v_war",
     "_attn_fwd",
-    "kernel_sdpa_fwd",
     "kernel_sdpa_bwd_q",
     "pcb08_tc01_kernel",
     "pcb08_tc02_kernel",
