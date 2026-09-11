@@ -54,7 +54,6 @@ static const llvm::DenseSet<llvm::StringRef> kDisableMergeCubeKernel = {
     "parallel_deltaformer_bwd_kernel_qk",
     "_parallel_hstu_attn_bwd",
     "chunk_kda_bwd_kernel_intra",
-    "chunk_gated_delta_rule_fwd_kernel_h_blockdim64",
 };
 
 void MergeCubeBlockPass::runOnOperation() {
