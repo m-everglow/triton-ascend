@@ -23,6 +23,7 @@
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/CloneOps.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/CreateIfOps.h"
+#include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/HoistOldValueUses.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/InitDependentMap.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/ProcessArgs.h"
 #include "ascend/include/DynamicCVPipeline/AddControlFlowCondition/UpdateConditionInfo.h"
@@ -135,6 +136,9 @@ void AddControlFlowConditionPass::runOnOperation() {
   updateLoopIterTimesPass->setConditionInfo(&info);
   pm.addPass(std::move(updateLoopIterTimesPass));
 
+  // Step7: Hoist uses of old tensor values after their updates.
+  pm.addPass(createHoistOldValueUsesPass());
+
   if (failed(runPipeline(pm, module))) {
     LDBG("Pass failed!");
     if (!CVPipeline::hasFallbackAttr(module)) {
@@ -157,6 +161,7 @@ void registerAddControlFlowConditionPasses() {
   registerPass(createCreateIfOpsPass);
   registerPass(createProcessArgsPass);
   registerPass(createUpdateLoopOpsPass);
+  registerPass(createHoistOldValueUsesPass);
   registerPass(createAddControlFlowConditionPass);
 }
 } // namespace triton
